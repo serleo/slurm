@@ -202,7 +202,7 @@ char *slurm_sprint_partition_info ( partition_info_t * part_ptr,
 	if (part_ptr->max_nodes == INFINITE)
 		sprintf(tmp_line, "MaxNodes=UNLIMITED");
 	else {
-		if(cluster_flags & CLUSTER_FLAG_BG)
+		if (cluster_flags & CLUSTER_FLAG_BG)
 			convert_num_unit((float)part_ptr->max_nodes,
 					 tmp1, sizeof(tmp1), UNIT_NONE);
 		else
@@ -220,13 +220,19 @@ char *slurm_sprint_partition_info ( partition_info_t * part_ptr,
 		sprintf(tmp_line, " MaxTime=%s", time_line);
 	}
 	xstrcat(out, tmp_line);
-	if(cluster_flags & CLUSTER_FLAG_BG)
+	if (cluster_flags & CLUSTER_FLAG_BG)
 		convert_num_unit((float)part_ptr->min_nodes, tmp1, sizeof(tmp1),
 				 UNIT_NONE);
 	else
 		snprintf(tmp1, sizeof(tmp1), "%u", part_ptr->min_nodes);
-
 	sprintf(tmp_line, " MinNodes=%s", tmp1);
+	xstrcat(out, tmp_line);
+	if (part_ptr->max_cpus_per_node == INFINITE)
+		sprintf(tmp_line, " MaxCPUsPerNode=UNLIMITED");
+	else {
+		sprintf(tmp_line, " MaxCPUsPerNode=%u",
+			part_ptr->max_cpus_per_node);
+	}
 	xstrcat(out, tmp_line);
 
 	if (one_liner)
