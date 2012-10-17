@@ -1127,7 +1127,8 @@ int _print_max_cpus_per_node(sinfo_data_t * sinfo_data, int width,
 		if (sinfo_data->part_info->max_cpus_per_node == INFINITE) {
 			sprintf(tmp_line, "MaxCPUsPerNode=UNLIMITED");
 		} else {
-			sprintf(tmp_line, "MaxCPUsPerNode=%u", sinfo_data->max_cpus_per_node);
+			sprintf(tmp_line, "MaxCPUsPerNode=%u",
+				sinfo_data->max_cpus_per_node);
 		}
 		_print_str(tmp_line, width, right_justify, true);
 

@@ -1129,8 +1129,7 @@ static void _update_part_record(sview_part_info_t *sview_part_info,
 				 tmp_min_nodes, sizeof(tmp_min_nodes), UNIT_NONE);
 	}
 
-	if (part_ptr->max_cpus_per_node == INFINITE)
-	{
+	if (part_ptr->max_cpus_per_node == INFINITE) {
 		sprintf(tmp_max_cpus_per_node, "UNLIMITED");
 	} else {
 		sprintf(tmp_max_cpus_per_node, "%u",
