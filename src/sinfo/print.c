@@ -1124,16 +1124,14 @@ int _print_max_cpus_per_node(sinfo_data_t * sinfo_data, int width,
 {
 	char tmp_line[32];
 	if (sinfo_data) {
-		if (sinfo_data->part_info->max_cpus_per_node == INFINITE) {
-			sprintf(tmp_line, "MaxCPUsPerNode=UNLIMITED");
-		} else {
-			sprintf(tmp_line, "MaxCPUsPerNode=%u",
-				sinfo_data->max_cpus_per_node);
-		}
+		if (sinfo_data->part_info->max_cpus_per_node == INFINITE)
+			sprintf(tmp_line, "UNLIMITED");
+		else
+			sprintf(tmp_line, "%u", sinfo_data->max_cpus_per_node);
 		_print_str(tmp_line, width, right_justify, true);
 
 	} else {
-		_print_str("MaxCPUsPerNode", width, right_justify, true);
+		_print_str("MAX_CPUS_PER_NODE", width, right_justify, true);
 	}
 
 	return SLURM_SUCCESS;
