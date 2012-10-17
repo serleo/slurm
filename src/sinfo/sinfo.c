@@ -620,6 +620,7 @@ static bool _match_node_data(sinfo_data_t *sinfo_ptr, node_info_t *node_ptr)
 	    (node_ptr->weight      != sinfo_ptr->min_weight))
 		return false;
 
+
 	return true;
 }
 
@@ -677,6 +678,10 @@ static bool _match_part_data(sinfo_data_t *sinfo_ptr,
 	    (part_ptr->priority != sinfo_ptr->part_info->priority))
 		return false;
 
+	if (params.match_flags.max_cpus_per_node_flag &&
+	    (part_ptr->max_cpus_per_node != sinfo_ptr->part_info->max_cpus_per_node))
+		return false;
+
 	return true;
 }
 
@@ -713,6 +718,8 @@ static void _update_sinfo(sinfo_data_t *sinfo_ptr, node_info_t *node_ptr,
 		sinfo_ptr->max_mem    = node_ptr->real_memory;
 		sinfo_ptr->min_weight = node_ptr->weight;
 		sinfo_ptr->max_weight = node_ptr->weight;
+		sinfo_ptr->max_cpus_per_node = sinfo_ptr->part_info->max_cpus_per_node;
+
 	} else if (hostlist_find(sinfo_ptr->nodes, node_ptr->name) != -1) {
 		/* we already have this node in this record,
 		 * just return, don't duplicate */

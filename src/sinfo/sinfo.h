@@ -99,6 +99,8 @@ typedef struct {
 	uint32_t min_weight;
 	uint32_t max_weight;
 
+	uint32_t max_cpus_per_node;
+
 	char *features;
 	char *gres;
 	char *reason;
@@ -145,6 +147,7 @@ struct sinfo_match_flags {
 	bool weight_flag;
 	bool reason_timestamp_flag;
 	bool reason_user_flag;
+	bool max_cpus_per_node_flag;
 };
 
 /* Input parameters */

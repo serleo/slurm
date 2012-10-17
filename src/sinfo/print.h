@@ -144,6 +144,8 @@ void print_sinfo_reservation(reserve_info_msg_t *resv_ptr);
 	format_add_function(list,wid,right,suffix,_print_alloc_nodes)
 #define format_add_invalid(list,wid,right,suffix) \
 	format_add_function(list,wid,right,suffix,_print_com_invalid)
+#define format_add_max_cpus_per_node(list,wid,right,suffix) \
+	format_add_function(list,wid,right,suffix,_print_max_cpus_per_node)
 
 /*****************************************************************************
  * Print Field Functions
@@ -223,5 +225,7 @@ int _print_alloc_nodes(sinfo_data_t * sinfo_data, int width,
 		       bool right_justify, char *suffix);
 int _print_com_invalid(sinfo_data_t * sinfo_data, int width,
 		       bool right_justify, char *suffix);
+int _print_max_cpus_per_node(sinfo_data_t * sinfo_data, int width,
+			     bool right_justify, char *suffix);
 
 #endif
