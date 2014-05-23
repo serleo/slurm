@@ -1,3 +1,3 @@
 # Makefile for scheduler plugins
 
-SUBDIRS = backfill builtin hold wiki wiki2
+SUBDIRS = backfill backfill1 builtin hold wiki wiki2

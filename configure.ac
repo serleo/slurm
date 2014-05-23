@@ -566,6 +566,7 @@ AC_CONFIG_FILES([Makefile
 		 src/plugins/proctrack/lua/Makefile
 		 src/plugins/sched/Makefile
 		 src/plugins/sched/backfill/Makefile
+		 src/plugins/sched/backfill1/Makefile
 		 src/plugins/sched/builtin/Makefile
 		 src/plugins/sched/hold/Makefile
 		 src/plugins/sched/wiki/Makefile
