@@ -172,6 +172,7 @@ bool ping_nodes_now = false;
 uint32_t      cluster_cpus = 0;
 int   with_slurmdbd = 0;
 bool want_nodes_reboot = true;
+int   batch_sched_delay = 3;
 int   sched_interval = 60;
 
 /* Next used for stats/diagnostics */
@@ -232,10 +233,6 @@ static void         _update_nice(void);
 inline static void  _usage(char *prog_name);
 static bool         _valid_controller(void);
 static bool         _wait_for_server_thread(void);
-
-typedef struct connection_arg {
-	int newsockfd;
-} connection_arg_t;
 
 time_t last_proc_req_start = 0;
 time_t next_stats_reset = 0;
@@ -330,6 +327,10 @@ int main(int argc, char *argv[])
 
 	if (license_init(slurmctld_conf.licenses) != SLURM_SUCCESS)
 		fatal("Invalid Licenses value: %s", slurmctld_conf.licenses);
+
+	/* Initialize the requeue exit and hold values.
+	 */
+	init_requeue_policy();
 
 #ifdef PR_SET_DUMPABLE
 	if (prctl(PR_SET_DUMPABLE, 1) < 0)
@@ -462,8 +463,10 @@ int main(int argc, char *argv[])
 			unlock_slurmctld(config_write_lock);
 			select_g_select_nodeinfo_set_all();
 
-			if (recover == 0)
+			if (recover == 0) {
+				slurmctld_init_db = 1;
 				_accounting_mark_all_nodes_down("cold-start");
+			}
 
 			primary = 1;
 
@@ -973,6 +976,8 @@ static void *_slurmctld_rpc_mgr(void *no_data)
 		fd_set_close_on_exec(newsockfd);
 		conn_arg = xmalloc(sizeof(connection_arg_t));
 		conn_arg->newsockfd = newsockfd;
+		memcpy(&conn_arg->cli_addr, &cli_addr, sizeof(slurm_addr_t));
+
 		if (slurmctld_config.shutdown_time)
 			no_thread = 1;
 		else if (pthread_create(&thread_id_rpc_req,
@@ -1031,7 +1036,7 @@ static void *_service_connection(void *arg)
 			info("_service_connection/slurm_receive_msg %m");
 	} else {
 		/* process the request */
-		slurmctld_req(msg);
+		slurmctld_req(msg, conn);
 	}
 	if ((conn->newsockfd >= 0)
 	    && slurm_close_accepted_conn(conn->newsockfd) < 0)
@@ -1311,6 +1316,7 @@ static void _queue_reboot_msg(void)
 static void *_slurmctld_background(void *no_data)
 {
 	static time_t last_sched_time;
+	static time_t last_full_sched_time;
 	static time_t last_checkpoint_time;
 	static time_t last_group_time;
 	static time_t last_health_check_time;
@@ -1360,7 +1366,8 @@ static void *_slurmctld_background(void *no_data)
 
 	/* Let the dust settle before doing work */
 	now = time(NULL);
-	last_sched_time = last_checkpoint_time = last_group_time = now;
+	last_sched_time = last_full_sched_time = now;
+	last_checkpoint_time = last_group_time = now;
 	last_purge_job_time = last_trigger = last_health_check_time = now;
 	last_timelimit_time = last_assert_primary_time = now;
 	last_no_resp_msg_time = last_resv_time = last_ctld_bu_ping = now;
@@ -1552,14 +1559,16 @@ static void *_slurmctld_background(void *no_data)
 		}
 
 		job_limit = NO_VAL;
-		if (difftime(now, last_sched_time) >= sched_interval) {
+		if (difftime(now, last_full_sched_time) >= sched_interval) {
 			slurm_mutex_lock(&sched_cnt_mutex);
 			/* job_limit = job_sched_cnt;	Ignored */
 			job_limit = INFINITE;
 			job_sched_cnt = 0;
 			slurm_mutex_unlock(&sched_cnt_mutex);
+			last_full_sched_time = now;
 		} else if (job_sched_cnt &&
-			   (difftime(now, last_sched_time) >= 3)) {
+			   (difftime(now, last_sched_time) >=
+			    batch_sched_delay)) {
 			slurm_mutex_lock(&sched_cnt_mutex);
 			job_limit = 0;	/* Default depth */
 			job_sched_cnt = 0;

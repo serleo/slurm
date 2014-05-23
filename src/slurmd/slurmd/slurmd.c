@@ -113,7 +113,7 @@
 #  define MAXHOSTNAMELEN	64
 #endif
 
-#define MAX_THREADS		130
+#define MAX_THREADS		256
 
 /* global, copied to STDERR_FILENO in tasks before the exec */
 int devnull = -1;
@@ -756,6 +756,8 @@ _read_config(void)
 
 	slurm_mutex_lock(&conf->config_mutex);
 
+	conf->chos_loc = xstrdup(cf->chos_loc);
+
 	if (conf->conffile == NULL)
 		conf->conffile = xstrdup(cf->slurm_conf);
 
@@ -943,6 +945,8 @@ _read_config(void)
 	conf->use_pam = cf->use_pam;
 	conf->task_plugin_param = cf->task_plugin_param;
 
+	conf->mem_limit_enforce = cf->mem_limit_enforce;
+
 	slurm_mutex_unlock(&conf->config_mutex);
 	slurm_conf_unlock();
 }
@@ -1098,6 +1102,7 @@ _print_conf(void)
 	debug3("Prolog      = `%s'",     conf->prolog);
 	debug3("TmpFS       = `%s'",     conf->tmpfs);
 	debug3("Public Cert = `%s'",     conf->pubkey);
+	debug3("ChosLoc     = `%s'",     conf->chos_loc);
 	debug3("Slurmstepd  = `%s'",     conf->stepd_loc);
 	debug3("Spool Dir   = `%s'",     conf->spooldir);
 	debug3("Pid File    = `%s'",     conf->pidfile);
@@ -1150,6 +1155,7 @@ _destroy_conf(void)
 		xfree(conf->acct_gather_profile_type);
 		xfree(conf->block_map);
 		xfree(conf->block_map_inv);
+		xfree(conf->chos_loc);
 		xfree(conf->cluster_name);
 		xfree(conf->conffile);
 		xfree(conf->epilog);
@@ -1237,6 +1243,7 @@ _process_cmdline(int ac, char **av)
 			exit(0);
 			break;
 		case 'd':
+			xfree(conf->stepd_loc);
 			conf->stepd_loc = xstrdup(optarg);
 			break;
 		case 'D':
@@ -1285,9 +1292,10 @@ _process_cmdline(int ac, char **av)
 	 *  If slurmstepd path wasn't overridden by command line, set
 	 *   it to the default here:
 	 */
-	if (!conf->stepd_loc)
+	if (!conf->stepd_loc) {
 		conf->stepd_loc =
 			xstrdup_printf("%s/sbin/slurmstepd", SLURM_PREFIX);
+	}
 }
 
 
@@ -1532,6 +1540,8 @@ _slurmd_init(void)
 		fatal("Unable to find slurmstepd file at %s", conf->stepd_loc);
 	if (!S_ISREG(stat_buf.st_mode))
 		fatal("slurmstepd not a file at %s", conf->stepd_loc);
+	if (conf->chos_loc && (access(conf->chos_loc, X_OK) != 0))
+		error("Unable to execute ChosLoc at %s: %m", conf->chos_loc);
 
 	return SLURM_SUCCESS;
 }

@@ -237,34 +237,45 @@ static uint32_t _get_job_time(uint32_t job_id)
 
 /*
  * scontrol_hold - perform some job hold/release operation
- * IN op - suspend/resume operation
- * IN job_id_str - a job id
+ * IN op	- suspend/resume operation
+ * IN job_str	- a job ID or job name
  * RET 0 if no slurm error, errno otherwise. parsing error prints
  *		error message and returns 0
  */
 extern int
-scontrol_hold(char *op, char *job_id_str)
+scontrol_hold(char *op, char *job_str)
 {
 	static uint32_t last_job_id = NO_VAL;
 	static job_info_msg_t *resp = NULL;
 	int i, rc = SLURM_SUCCESS;
 	char *next_str;
 	job_desc_msg_t job_msg;
-	uint32_t job_id;
+	uint32_t job_id = 0;
 	uint32_t array_id;
+	char *job_name = NULL;
 	slurm_job_info_t *job_ptr;
 
-	if (job_id_str) {
-		job_id = (uint32_t) strtol(job_id_str, &next_str, 10);
+	if (job_str && !strncasecmp(job_str, "JobID=", 6))
+		job_str += 6;
+	if (job_str && !strncasecmp(job_str, "Name=", 5))
+		job_str += 5;
+
+	if (job_str && (job_str[0] >= '0') && (job_str[0] <= '9')) {
+		job_id = (uint32_t) strtol(job_str, &next_str, 10);
 		if (next_str[0] == '_')
 			array_id = strtol(next_str+1, &next_str, 10);
 		else
 			array_id = NO_VAL;
 		if ((job_id == 0) || (next_str[0] != '\0')) {
 			fprintf(stderr, "Invalid job id specified (%s)\n",
-				job_id_str);
+				job_str);
 			return 1;
 		}
+	} else if (job_str) {
+		array_id = NO_VAL;
+		job_id = 0;
+		job_name = job_str;
+		last_job_id = NO_VAL;
 	} else {
 		last_job_id = NO_VAL;	/* Refresh cache on next call */
 		return 0;
@@ -280,7 +291,6 @@ scontrol_hold(char *op, char *job_id_str)
 	}
 
 	slurm_init_job_desc_msg (&job_msg);
-	job_msg.job_id = job_id;
 	/* set current user, needed e.g., for AllowGroups checks */
 	job_msg.user_id = getuid();
 	if ((strncasecmp(op, "holdu", 5) == 0) ||
@@ -297,10 +307,16 @@ scontrol_hold(char *op, char *job_id_str)
 		if ((array_id != NO_VAL) &&
 		    (job_ptr->array_task_id != array_id))
 			continue;
+		if (job_name &&
+		    ((job_ptr->name == NULL) ||
+		     strcmp(job_name, job_ptr->name)))
+			continue;
 
 		if (!IS_JOB_PENDING(job_ptr)) {
 			if ((array_id == NO_VAL) &&
 			    (job_ptr->array_task_id != NO_VAL))
+				continue;
+			if (job_name)
 				continue;
 			slurm_seterrno(ESLURM_JOB_NOT_PENDING);
 			return ESLURM_JOB_NOT_PENDING;
@@ -969,6 +985,10 @@ scontrol_update_job (int argc, char *argv[])
 	for (i = 0; i < num_ids; i++) {
 		job_msg.job_id = ids[i].job_id;
 		if (slurm_update_job(&job_msg)) {
+			/* Save the errno in case one
+			 * or more array tasks are in
+			 * error.
+			 */
 			rc = slurm_get_errno();
 			if (ids[i].array_task_id == NO_VAL) {
 				error("Error updating job %u", ids[i].job_id);
@@ -977,6 +997,10 @@ scontrol_update_job (int argc, char *argv[])
 				      ids[i].array_job_id, ids[i].array_task_id,
 				      ids[i].job_id);
 			}
+			/* Print the errno message for each
+			 * job array task.
+			 */
+			slurm_perror("slurm_update_job()");
 		}
 	}
 	if (update_size)	/* See check above for one job ID */
@@ -1315,7 +1339,7 @@ static job_ids_t *_get_job_ids2(const char *jobid, uint32_t *num_ids)
 	i = 0;
 	for (cc = 0; cc < job_info->record_count; cc++) {
 		job_state = job_info->job_array[cc].job_state & JOB_STATE_BASE;
-		if (job_state < JOB_SUSPENDED) {
+		if (job_state <= JOB_SUSPENDED) {
 			job_ids[i].array_job_id =
 				job_info->job_array[cc].array_job_id;
 			job_ids[i].array_task_id =

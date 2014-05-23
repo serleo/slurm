@@ -1059,9 +1059,7 @@ again:
 		fstatus = SLURM_SUCCESS;
 
 	/* validate the requested cpu frequency and set it */
-	if (job->cpu_freq != NO_VAL) {
-		cpu_freq_cgroup_validate(job, step_alloc_cores);
-	}
+	cpu_freq_cgroup_validate(job, step_alloc_cores);
 
 error:
 	xcgroup_unlock(&cpuset_cg);
@@ -1084,10 +1082,44 @@ extern int task_cgroup_cpuset_attach_task(stepd_step_rec_t *job)
 	return fstatus;
 }
 
+/* The job has specialized cores, synchronize user mask with available cores */
+static void _validate_mask(uint32_t task_id, hwloc_obj_t obj, cpu_set_t *ts)
+{
+	int i, j, overlaps = 0;
+	bool superset = true;
+
+	for (i = 0; i < CPU_SETSIZE; i++) {
+		if (!CPU_ISSET(i, ts))
+			continue;
+		j = hwloc_bitmap_isset(obj->allowed_cpuset, i);
+		if (j > 0) {
+			overlaps++;
+		} else if (j == 0) {
+			CPU_CLR(i, ts);
+			superset = false;
+		}
+	}
+
+	if (overlaps == 0) {
+		/* The task's cpu map is completely invalid.
+		 * Give it all allowed CPUs */
+		for (i = 0; i < CPU_SETSIZE; i++) {
+			if (hwloc_bitmap_isset(obj->allowed_cpuset, i) > 0)
+				CPU_SET(i, ts);
+		}
+	}
+
+	if (!superset) {
+		info("task/cgroup: Ignoring user CPU binding outside of job "
+		     "step allocation for task[%u]", task_id);
+		fprintf(stderr, "Requested cpu_bind option outside of job "
+			"step allocation for task[%u]\n", task_id);
+	}
+}
+
 /* affinity should be set using sched_setaffinity to not force */
 /* user to have to play with the cgroup hierarchy to modify it */
-extern int task_cgroup_cpuset_set_task_affinity(stepd_step_rec_t *job,
-						int task_affinity)
+extern int task_cgroup_cpuset_set_task_affinity(stepd_step_rec_t *job)
 {
 	int fstatus = SLURM_ERROR;
 
@@ -1108,7 +1140,7 @@ extern int task_cgroup_cpuset_set_task_affinity(stepd_step_rec_t *job,
 	hwloc_obj_type_t hwtype;
 	hwloc_obj_type_t req_hwtype;
 	int bind_verbose = 0;
-	int rc = SLURM_SUCCESS;
+	int rc = SLURM_SUCCESS, match;
 	pid_t    pid = job->envtp->task_pid;
 	size_t tssize;
 	uint32_t nldoms;
@@ -1121,8 +1153,8 @@ extern int task_cgroup_cpuset_set_task_affinity(stepd_step_rec_t *job,
 	uint32_t jnpus = jntasks * job->cpus_per_task;
 
 	bind_type = job->cpu_bind_type;
-	if (conf->task_plugin_param & CPU_BIND_VERBOSE ||
-	    bind_type & CPU_BIND_VERBOSE)
+	if ((conf->task_plugin_param & CPU_BIND_VERBOSE) ||
+	    (bind_type & CPU_BIND_VERBOSE))
 		bind_verbose = 1 ;
 
 	/* Allocate and initialize hwloc objects */
@@ -1206,32 +1238,18 @@ extern int task_cgroup_cpuset_set_task_affinity(stepd_step_rec_t *job,
 
 	hwtype = HWLOC_OBJ_MACHINE;
 	nobj = 1;
-	if (task_affinity == 2) {
-		if (npus >= jnpus || bind_type & CPU_BIND_TO_THREADS) {
-			hwtype = HWLOC_OBJ_PU;
-			nobj = npus;
-		} else if (ncores >= jnpus || bind_type & CPU_BIND_TO_CORES) {
-			hwtype = HWLOC_OBJ_CORE;
-			nobj = ncores;
-		} else if (nsockets >= jntasks &&
-			   bind_type & CPU_BIND_TO_SOCKETS) {
-			hwtype = socket_or_node;
-			nobj = nsockets;
-		}
-	} else {
-		if (npus >= jnpus || bind_type & CPU_BIND_TO_THREADS) {
-			hwtype = HWLOC_OBJ_PU;
-			nobj = npus;
-		}
-		if (ncores >= jnpus || bind_type & CPU_BIND_TO_CORES) {
-			hwtype = HWLOC_OBJ_CORE;
-			nobj = ncores;
-		}
-		if (nsockets >= jntasks &&
-		    bind_type & CPU_BIND_TO_SOCKETS) {
-			hwtype = socket_or_node;
-			nobj = nsockets;
-		}
+	if (npus >= jnpus || bind_type & CPU_BIND_TO_THREADS) {
+		hwtype = HWLOC_OBJ_PU;
+		nobj = npus;
+	}
+	if (ncores >= jnpus || bind_type & CPU_BIND_TO_CORES) {
+		hwtype = HWLOC_OBJ_CORE;
+		nobj = ncores;
+	}
+	if (nsockets >= jntasks &&
+	    bind_type & CPU_BIND_TO_SOCKETS) {
+		hwtype = socket_or_node;
+		nobj = nsockets;
 	}
 	/*
 	 * HWLOC returns all the NUMA nodes available regardless of the
@@ -1253,42 +1271,47 @@ extern int task_cgroup_cpuset_set_task_affinity(stepd_step_rec_t *job,
 	if (hwloc_compare_types(hwtype,HWLOC_OBJ_MACHINE) == 0) {
 
 		info("task/cgroup: task[%u] disabling affinity because of %s "
-		     "granularity",taskid,hwloc_obj_type_string(hwtype));
+		     "granularity",taskid, hwloc_obj_type_string(hwtype));
 
-	} else if (hwloc_compare_types(hwtype,HWLOC_OBJ_CORE) >= 0 &&
-		   jnpus > nobj) {
-
-		info("task/cgroup: task[%u] not enough %s objects, disabling "
-		     "affinity",taskid,hwloc_obj_type_string(hwtype));
+	} else if ((hwloc_compare_types(hwtype, HWLOC_OBJ_CORE) >= 0) &&
+		   (nobj < jnpus)) {
+		info("task/cgroup: task[%u] not enough %s objects (%d < %d), "
+		     "disabling affinity",
+		     taskid, hwloc_obj_type_string(hwtype), nobj, jnpus);
 
 	} else if (bind_type & bind_mode) {
 		/* Explicit binding mode specified by the user
 		 * Bind the taskid in accordance with the specified mode
 		 */
 		obj = hwloc_get_obj_by_type(topology, HWLOC_OBJ_MACHINE, 0);
-		if (!hwloc_bitmap_isequal(obj->complete_cpuset,
-				obj->allowed_cpuset)) {
+		match = hwloc_bitmap_isequal(obj->complete_cpuset,
+					     obj->allowed_cpuset);
+		if ((job->job_core_spec == 0) && !match) {
 			info("task/cgroup: entire node must be allocated, "
 			     "disabling affinity, task[%u]", taskid);
 			fprintf(stderr, "Requested cpu_bind option requires "
 				"entire node to be allocated; disabling "
 				"affinity\n");
 		} else {
-			if (bind_verbose)
+			if (bind_verbose) {
 				info("task/cgroup: task[%u] is requesting "
-					"explicit binding mode",taskid);
+				     "explicit binding mode", taskid);
+			}
 			_get_sched_cpuset(topology, hwtype, req_hwtype, &ts,
-					job);
+					  job);
 			tssize = sizeof(cpu_set_t);
 			fstatus = SLURM_SUCCESS;
+			if (job->job_core_spec)
+				_validate_mask(taskid, obj, &ts);
 			if ((rc = sched_setaffinity(pid, tssize, &ts))) {
 				error("task/cgroup: task[%u] unable to set "
-					"mask 0x%s", taskid,
-					cpuset_to_str(&ts, mstr));
+				      "mask 0x%s", taskid,
+				      cpuset_to_str(&ts, mstr));
 				fstatus = SLURM_ERROR;
-			} else if (bind_verbose)
+			} else if (bind_verbose) {
 				info("task/cgroup: task[%u] mask 0x%s",
-					taskid, cpuset_to_str(&ts, mstr));
+				     taskid, cpuset_to_str(&ts, mstr));
+			}
 			slurm_chkaffinity(&ts, job, rc);
 		}
 	} else {
@@ -1335,21 +1358,36 @@ extern int task_cgroup_cpuset_set_task_affinity(stepd_step_rec_t *job,
 		 *
 		 * You can see the equivalent code for the
 		 * task/affinity plugin in
-		 * src/plugins/task/affinity/dist_tasks.c, around line 384.
+		 * src/plugins/task/affinity/dist_tasks.c, around line 368
 		 */
 		switch (job->task_dist) {
-		case SLURM_DIST_CYCLIC:
+		case SLURM_DIST_BLOCK_BLOCK:
+		case SLURM_DIST_CYCLIC_BLOCK:
+		case SLURM_DIST_PLANE:
+			/* tasks are distributed in blocks within a plane */
+			_task_cgroup_cpuset_dist_block(
+				topology, hwtype, req_hwtype,
+				nobj, job, bind_verbose, cpuset);
+			break;
+		case SLURM_DIST_ARBITRARY:
 		case SLURM_DIST_BLOCK:
-		case SLURM_DIST_CYCLIC_CYCLIC:
-		case SLURM_DIST_BLOCK_CYCLIC:
+		case SLURM_DIST_CYCLIC:
+		case SLURM_DIST_UNKNOWN:
+			if (slurm_get_select_type_param()
+			    & CR_CORE_DEFAULT_DIST_BLOCK) {
+				_task_cgroup_cpuset_dist_block(
+					topology, hwtype, req_hwtype,
+					nobj, job, bind_verbose, cpuset);
+				break;
+			}
+			/* We want to fall through here if we aren't doing a
+			   default dist block.
+			*/
+		default:
 			_task_cgroup_cpuset_dist_cyclic(
 				topology, hwtype, req_hwtype,
 				job, bind_verbose, cpuset);
 			break;
-		default:
-			_task_cgroup_cpuset_dist_block(
-				topology, hwtype, req_hwtype,
-				nobj, job, bind_verbose, cpuset);
 		}
 
 		hwloc_bitmap_asprintf(&str, cpuset);

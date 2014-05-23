@@ -175,8 +175,9 @@ s_p_options_t slurm_conf_options[] = {
 	{"BackupAddr", S_P_STRING},
 	{"BackupController", S_P_STRING},
 	{"BatchStartTimeout", S_P_UINT16},
-	{"CheckpointType", S_P_STRING},
 	{"CacheGroups", S_P_UINT16},
+	{"CheckpointType", S_P_STRING},
+	{"ChosLoc", S_P_STRING},
 	{"CoreSpecPlugin", S_P_STRING},
 	{"ClusterName", S_P_STRING},
 	{"CompleteWait", S_P_UINT16},
@@ -241,6 +242,7 @@ s_p_options_t slurm_conf_options[] = {
 	{"MaxMemPerNode", S_P_UINT32},
 	{"MaxStepCount", S_P_UINT32},
 	{"MaxTasksPerNode", S_P_UINT16},
+	{"MemLimitEnforce", S_P_STRING},
 	{"MessageTimeout", S_P_UINT16},
 	{"MinJobAge", S_P_UINT16},
 	{"MpiDefault", S_P_STRING},
@@ -254,6 +256,7 @@ s_p_options_t slurm_conf_options[] = {
 	{"PriorityCalcPeriod", S_P_STRING},
 	{"PriorityFavorSmall", S_P_BOOLEAN},
 	{"PriorityMaxAge", S_P_STRING},
+	{"PriorityParameters", S_P_STRING},
 	{"PriorityUsageResetPeriod", S_P_STRING},
 	{"PriorityType", S_P_STRING},
 	{"PriorityFlags", S_P_STRING},
@@ -272,6 +275,8 @@ s_p_options_t slurm_conf_options[] = {
 	{"PropagateResourceLimits", S_P_STRING},
 	{"RebootProgram", S_P_STRING},
 	{"ReconfigFlags", S_P_STRING},
+	{"RequeueExit", S_P_STRING},
+	{"RequeueExitHold", S_P_STRING},
 	{"ResumeProgram", S_P_STRING},
 	{"ResumeRate", S_P_UINT16},
 	{"ResumeTimeout", S_P_UINT16},
@@ -344,7 +349,7 @@ static bool _is_valid_path (char *path, char *msg)
 	 *  Allocate temporary space for walking the list of dirs:
 	 */
 	int pathlen;
-	char *buf, *p, *entry;
+	char *buf = NULL, *p, *entry;
 
 	if (path == NULL) {
 		error ("is_valid_path: path is NULL!");
@@ -2120,6 +2125,7 @@ free_slurm_conf (slurm_ctl_conf_t *ctl_conf_ptr, bool purge_node_hash)
 	xfree (ctl_conf_ptr->backup_addr);
 	xfree (ctl_conf_ptr->backup_controller);
 	xfree (ctl_conf_ptr->checkpoint_type);
+	xfree (ctl_conf_ptr->chos_loc);
 	xfree (ctl_conf_ptr->cluster_name);
 	xfree (ctl_conf_ptr->control_addr);
 	xfree (ctl_conf_ptr->control_machine);
@@ -2155,6 +2161,7 @@ free_slurm_conf (slurm_ctl_conf_t *ctl_conf_ptr, bool purge_node_hash)
 	xfree (ctl_conf_ptr->plugindir);
 	xfree (ctl_conf_ptr->plugstack);
 	xfree (ctl_conf_ptr->preempt_type);
+	xfree (ctl_conf_ptr->priority_params);
 	xfree (ctl_conf_ptr->priority_type);
 	xfree (ctl_conf_ptr->proctrack_type);
 	xfree (ctl_conf_ptr->prolog);
@@ -2162,6 +2169,8 @@ free_slurm_conf (slurm_ctl_conf_t *ctl_conf_ptr, bool purge_node_hash)
 	xfree (ctl_conf_ptr->propagate_rlimits);
 	xfree (ctl_conf_ptr->propagate_rlimits_except);
 	xfree (ctl_conf_ptr->reboot_program);
+	xfree (ctl_conf_ptr->requeue_exit);
+	xfree (ctl_conf_ptr->requeue_exit_hold);
 	xfree (ctl_conf_ptr->resume_program);
 	xfree (ctl_conf_ptr->resv_epilog);
 	xfree (ctl_conf_ptr->resv_prolog);
@@ -2226,6 +2235,7 @@ init_slurm_conf (slurm_ctl_conf_t *ctl_conf_ptr)
 	xfree (ctl_conf_ptr->backup_controller);
 	ctl_conf_ptr->batch_start_timeout	= 0;
 	xfree (ctl_conf_ptr->checkpoint_type);
+	xfree (ctl_conf_ptr->chos_loc);
 	xfree (ctl_conf_ptr->cluster_name);
 	ctl_conf_ptr->complete_wait		= (uint16_t) NO_VAL;
 	xfree (ctl_conf_ptr->control_addr);
@@ -2280,6 +2290,7 @@ init_slurm_conf (slurm_ctl_conf_t *ctl_conf_ptr)
 	ctl_conf_ptr->max_job_id		= NO_VAL;
 	ctl_conf_ptr->max_mem_per_cpu           = 0;
 	ctl_conf_ptr->max_step_cnt		= (uint32_t) NO_VAL;
+	ctl_conf_ptr->mem_limit_enforce         = true;
 	ctl_conf_ptr->min_job_age		= (uint16_t) NO_VAL;
 	xfree (ctl_conf_ptr->mpi_default);
 	xfree (ctl_conf_ptr->mpi_params);
@@ -2291,6 +2302,8 @@ init_slurm_conf (slurm_ctl_conf_t *ctl_conf_ptr)
 	xfree (ctl_conf_ptr->plugstack);
 	ctl_conf_ptr->preempt_mode              = 0;
 	xfree (ctl_conf_ptr->preempt_type);
+	xfree (ctl_conf_ptr->priority_params);
+	xfree (ctl_conf_ptr->priority_type);
 	ctl_conf_ptr->private_data              = 0;
 	xfree (ctl_conf_ptr->proctrack_type);
 	xfree (ctl_conf_ptr->prolog);
@@ -2300,6 +2313,8 @@ init_slurm_conf (slurm_ctl_conf_t *ctl_conf_ptr)
 	xfree (ctl_conf_ptr->propagate_rlimits_except);
 	xfree (ctl_conf_ptr->reboot_program);
 	ctl_conf_ptr->reconfig_flags		= 0;
+	xfree(ctl_conf_ptr->requeue_exit);
+	xfree(ctl_conf_ptr->requeue_exit_hold);
 	ctl_conf_ptr->resume_timeout		= 0;
 	xfree (ctl_conf_ptr->resume_program);
 	ctl_conf_ptr->resume_rate		= (uint16_t) NO_VAL;
@@ -2388,8 +2403,9 @@ static int _config_is_storage(s_p_hashtbl_t *hashtbl, char *name)
 	port = strrchr(&host[1], ':');
 	if (port == NULL)
 		return (-1);
-	conf_ptr->accounting_storage_type = xstrdup_printf("accounting_storage/%.*s",
-							   (int)(cluster - name), name);
+	conf_ptr->accounting_storage_type =
+		xstrdup_printf("accounting_storage/%.*s",
+			       (int)(cluster - name), name);
 	cluster++;
 	cluster = xstrndup(cluster, host - cluster);
 	host++;
@@ -2817,6 +2833,8 @@ _validate_and_set_defaults(slurm_ctl_conf_t *conf, s_p_hashtbl_t *hashtbl)
 
 	if (!s_p_get_string(&conf->checkpoint_type, "CheckpointType", hashtbl))
 		conf->checkpoint_type = xstrdup(DEFAULT_CHECKPOINT_TYPE);
+
+	s_p_get_string(&conf->chos_loc, "ChosLoc", hashtbl);
 
 	if (!s_p_get_string(&conf->crypto_type, "CryptoType", hashtbl))
 		 conf->crypto_type = xstrdup(DEFAULT_CRYPTO_TYPE);
@@ -3374,6 +3392,8 @@ _validate_and_set_defaults(slurm_ctl_conf_t *conf, s_p_hashtbl_t *hashtbl)
 			conf->priority_flags |= PRIORITY_FLAGS_ACCRUE_ALWAYS;
 		if (slurm_strcasestr(temp_str, "SMALL_RELATIVE_TO_TIME"))
 			conf->priority_flags |= PRIORITY_FLAGS_SIZE_RELATIVE;
+		if (slurm_strcasestr(temp_str, "CALCULATE_RUNNING"))
+			conf->priority_flags |= PRIORITY_FLAGS_CALCULATE_RUNNING;
 
 		if (slurm_strcasestr(temp_str, "TICKET_BASED"))
 			conf->priority_flags |= PRIORITY_FLAGS_TICKET_BASED;
@@ -3393,6 +3413,8 @@ _validate_and_set_defaults(slurm_ctl_conf_t *conf, s_p_hashtbl_t *hashtbl)
 		xfree(temp_str);
 	} else
 		conf->priority_max_age = DEFAULT_PRIORITY_DECAY;
+
+	s_p_get_string(&conf->priority_params, "PriorityParameters", hashtbl);
 
 	if (s_p_get_string(&temp_str, "PriorityUsageResetPeriod", hashtbl)) {
 		if (strcasecmp(temp_str, "none") == 0)
@@ -3513,6 +3535,15 @@ _validate_and_set_defaults(slurm_ctl_conf_t *conf, s_p_hashtbl_t *hashtbl)
 		conf->prolog_flags = prolog_str2flags(temp_str);
 		if (conf->prolog_flags == (uint16_t) NO_VAL) {
 			fatal("PrologFlags invalid: %s", temp_str);
+		}
+		if (conf->prolog_flags & PROLOG_FLAG_NOHOLD) {
+			conf->prolog_flags |= PROLOG_FLAG_ALLOC;
+#ifdef HAVE_ALPS_CRAY
+			error("PrologFlags=NoHold is not compatible when "
+			      "running on ALPS/Cray systems");
+			conf->prolog_flags &= (~PROLOG_FLAG_NOHOLD);
+			return SLURM_ERROR;
+#endif
 		}
 		xfree(temp_str);
 	} else { /* Default: no Prolog Flags are set */
@@ -3816,6 +3847,12 @@ _validate_and_set_defaults(slurm_ctl_conf_t *conf, s_p_hashtbl_t *hashtbl)
 
 	if (!s_p_get_string(&conf->task_plugin, "TaskPlugin", hashtbl))
 		conf->task_plugin = xstrdup(DEFAULT_TASK_PLUGIN);
+#ifdef HAVE_FRONT_END
+	if (strcmp(conf->task_plugin, "task/none")) {
+		error("On FrontEnd systems TaskPlugin=task/none is required");
+		return SLURM_ERROR;
+	}
+#endif
 
 	if (s_p_get_string(&temp_str, "TaskPluginParam", hashtbl)) {
 		char *last = NULL, *tok;
@@ -3931,6 +3968,20 @@ _validate_and_set_defaults(slurm_ctl_conf_t *conf, s_p_hashtbl_t *hashtbl)
 		return SLURM_ERROR;
 	}
 #endif
+	/* The default value is true meaning the memory
+	 * is going to be enforced by slurmstepd and/or
+	 * slurmd.
+	 */
+	if (s_p_get_string(&temp_str, "MemLimitEnforce", hashtbl)) {
+		if (strncasecmp(temp_str, "no", 2) == 0)
+			conf->mem_limit_enforce = false;
+		xfree(temp_str);
+	}
+
+	/* The default values for both of these variables are NULL.
+	 */
+	s_p_get_string(&conf->requeue_exit, "RequeueExit", hashtbl);
+	s_p_get_string(&conf->requeue_exit_hold, "RequeueExitHold", hashtbl);
 
 	xfree(default_storage_type);
 	xfree(default_storage_loc);
@@ -3977,6 +4028,12 @@ extern char * prolog_flags2str(uint16_t prolog_flags)
 		xstrcat(rc, "Alloc");
 	}
 
+	if (prolog_flags & PROLOG_FLAG_NOHOLD) {
+		if (rc)
+			xstrcat(rc, ",");
+		xstrcat(rc, "NoHold");
+	}
+
 	return rc;
 }
 
@@ -3998,6 +4055,8 @@ extern uint16_t prolog_str2flags(char *prolog_flags)
 	while (tok) {
 		if (strcasecmp(tok, "Alloc") == 0)
 			rc |= PROLOG_FLAG_ALLOC;
+		else if (strcasecmp(tok, "NoHold") == 0)
+			rc |= PROLOG_FLAG_NOHOLD;
 		else {
 			error("Invalid PrologFlag: %s", tok);
 			rc = (uint16_t)NO_VAL;
@@ -4152,6 +4211,8 @@ extern char * debug_flags2str(uint32_t debug_flags)
 			xstrcat(rc, ",");
 		xstrcat(rc, "Wiki");
 	}
+	if (debug_flags & DEBUG_FLAG_PROTOCOL) {
+	}
 	return rc;
 }
 
@@ -4225,6 +4286,8 @@ extern uint32_t debug_str2flags(char *debug_flags)
 			rc |= DEBUG_FLAG_TRIGGERS;
 		else if (strcasecmp(tok, "Wiki") == 0)
 			rc |= DEBUG_FLAG_WIKI;
+		else if (strcasecmp(tok, "Protocol") == 0)
+			rc |= DEBUG_FLAG_PROTOCOL;
 		else {
 			error("Invalid DebugFlag: %s", tok);
 			rc = NO_VAL;
@@ -4347,14 +4410,18 @@ extern int sort_key_pairs(void *v1, void *v2)
 extern char *get_extra_conf_path(char *conf_name)
 {
 	char *val = getenv("SLURM_CONF");
-	char *rc = NULL;
+	char *rc = NULL, *slash;
 
 	if (!val)
 		val = default_slurm_config_file;
 
 	/* Replace file name on end of path */
 	rc = xstrdup(val);
-	xstrsubstitute(rc, "slurm.conf", conf_name);
+	if ((slash = strrchr(rc, '/')))
+		slash[1] = '\0';
+	else
+		rc[0] = '\0';
+	xstrcat(rc, conf_name);
 
 	return rc;
 }

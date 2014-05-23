@@ -715,33 +715,6 @@ rwfail:
 	return (pid_t)-1;
 }
 
-int
-_step_suspend_write(int fd)
-{
-	int req = REQUEST_STEP_SUSPEND;
-
-	safe_write(fd, &req, sizeof(int));
-	return 0;
-rwfail:
-	return -1;
-}
-
-int
-_step_suspend_read(int fd)
-{
-	int rc, errnum = 0;
-
-	/* Receive the return code and errno */
-	safe_read(fd, &rc, sizeof(int));
-	safe_read(fd, &errnum, sizeof(int));
-
-	errno = errnum;
-	return rc;
-rwfail:
-	return -1;
-}
-
-
 /*
  * Suspend execution of the job step.  Only root or SlurmUser is
  * authorized to use this call. Since this activity includes a 'sleep 1'
@@ -750,32 +723,26 @@ rwfail:
  * Returns SLURM_SUCCESS is successful.  On error returns SLURM_ERROR
  * and sets errno.
  */
-int
-stepd_suspend(int *fd, int size, uint32_t jobid)
+extern int
+stepd_suspend(int fd, suspend_int_msg_t *susp_req, int phase)
 {
-	int i;
+	int req = REQUEST_STEP_SUSPEND;
 	int rc = 0;
+	int errnum = 0;
 
-	for (i = 0; i < size; i++) {
-		debug2("Suspending job %u cached step count %d", jobid, i);
-		if (_step_suspend_write(fd[i]) < 0) {
-			debug("  suspend send failed: job %u (%d): %m",
-				jobid, i);
-			close(fd[i]);
-			fd[i] = -1;
-			rc = -1;
-		}
+	if (phase == 0) {
+		safe_write(fd, &req, sizeof(int));
+		safe_write(fd, &susp_req->job_core_spec, sizeof(uint16_t));
+	} else {
+		/* Receive the return code and errno */
+		safe_read(fd, &rc, sizeof(int));
+		safe_read(fd, &errnum, sizeof(int));
+		errno = errnum;
 	}
-	for (i = 0; i < size; i++) {
-		if (fd[i] == -1)
-			continue;
-		if (_step_suspend_read(fd[i]) < 0) {
-			debug("  resume failed for cached step count %d: %m",
-				i);
-			rc = -1;
-		}
-	}
+
 	return rc;
+rwfail:
+	return -1;
 }
 
 /*
@@ -786,20 +753,23 @@ stepd_suspend(int *fd, int size, uint32_t jobid)
  * Returns SLURM_SUCCESS is successful.  On error returns SLURM_ERROR
  * and sets errno.
  */
-int
-stepd_resume(int fd)
+extern int
+stepd_resume(int fd, suspend_int_msg_t *susp_req, int phase)
 {
 	int req = REQUEST_STEP_RESUME;
-	int rc;
+	int rc = 0;
 	int errnum = 0;
 
-	safe_write(fd, &req, sizeof(int));
+	if (phase == 0) {
+		safe_write(fd, &req, sizeof(int));
+		safe_write(fd, &susp_req->job_core_spec, sizeof(uint16_t));
+	} else {
+		/* Receive the return code and errno */
+		safe_read(fd, &rc, sizeof(int));
+		safe_read(fd, &errnum, sizeof(int));
+		errno = errnum;
+	}
 
-	/* Receive the return code and errno */
-	safe_read(fd, &rc, sizeof(int));
-	safe_read(fd, &errnum, sizeof(int));
-
-	errno = errnum;
 	return rc;
 rwfail:
 	return -1;

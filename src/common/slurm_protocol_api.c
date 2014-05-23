@@ -558,6 +558,22 @@ uint32_t slurm_get_priority_max_age(void)
 	return age;
 }
 
+/* slurm_get_priority_params
+ * RET char * - Value of PriorityParameters, MUST be xfreed by caller */
+char *slurm_get_priority_params(void)
+{
+	char *params = 0;
+	slurm_ctl_conf_t *conf;
+
+ 	if (slurmdbd_conf) {
+	} else {
+		conf = slurm_conf_lock();
+		params = xstrdup(conf->priority_params);
+		slurm_conf_unlock();
+	}
+	return params;
+}
+
 /* slurm_get_priority_reset_period
  * returns the priority usage reset period from slurmctld_conf object
  * RET uint16_t - flag, see PRIORITY_RESET_* in slurm/slurm.h.
@@ -2140,6 +2156,21 @@ uint16_t slurm_get_task_plugin_param(void)
 	return task_plugin_param;
 }
 
+/* Get SchedulerTimeSlice (secs) */
+uint16_t slurm_get_time_slice(void)
+{
+	uint16_t sched_time_slice = 0;
+	slurm_ctl_conf_t *conf;
+
+	if (slurmdbd_conf) {
+	} else {
+		conf = slurm_conf_lock();
+		sched_time_slice = conf->sched_time_slice;
+		slurm_conf_unlock();
+	}
+	return sched_time_slice;
+}
+
 /* slurm_get_core_spec_plugin
  * RET core_spec plugin name, must be xfreed by caller */
 char *slurm_get_core_spec_plugin(void)
@@ -2186,17 +2217,30 @@ static void _remap_slurmctld_errno(void)
 \**********************************************************************/
 
 /* In the socket implementation it creates a socket, binds to it, and
- *	listens for connections.
+ *	listens for connections. Retry if bind() or listen() fail
+ *      even if asked for an ephemeral port.
  *
  * IN  port     - port to bind the msg server to
  * RET slurm_fd_t - file descriptor of the connection created
  */
 slurm_fd_t slurm_init_msg_engine_port(uint16_t port)
 {
+	slurm_fd_t cc;
 	slurm_addr_t addr;
+	int cnt;
 
+	cnt = 0;
+eagain:
 	slurm_set_addr_any(&addr, port);
-	return _slurm_init_msg_engine(&addr);
+	cc = _slurm_init_msg_engine(&addr);
+	if (cc < 0 && port == 0) {
+		++cnt;
+		if (cnt <= 5) {
+			usleep(5000);
+			goto eagain;
+		}
+	}
+	return cc;
 }
 
 /* In the socket implementation it creates a socket, binds to it, and

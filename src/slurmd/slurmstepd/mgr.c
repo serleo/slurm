@@ -777,6 +777,12 @@ _one_step_complete_msg(stepd_step_rec_t *job, int first, int last)
 	memset(&msg, 0, sizeof(step_complete_msg_t));
 	msg.job_id = job->jobid;
 	msg.job_step_id = job->stepid;
+	if (job->batch) {	/* Nested batch step anomalies */
+		if (first == -1)
+			first = 0;
+		if (last == -1)
+			last = 0;
+	}
 	msg.range_first = first;
 	msg.range_last = last;
 	msg.step_rc = step_complete.step_rc;
@@ -894,7 +900,7 @@ static void
 _send_step_complete_msgs(stepd_step_rec_t *job)
 {
 	int start, size;
-	int first=-1, last=-1;
+	int first = -1, last = -1;
 	bool sent_own_comp_msg = false;
 
 	pthread_mutex_lock(&step_complete.lock);
@@ -909,9 +915,9 @@ _send_step_complete_msgs(stepd_step_rec_t *job)
 		return;
 	}
 
-	while(_bit_getrange(start, size, &first, &last)) {
+	while (_bit_getrange(start, size, &first, &last)) {
 		/* THIS node is not in the bit string, so we need to prepend
-		   the local rank */
+		 * the local rank */
 		if (start == 0 && first == 0) {
 			sent_own_comp_msg = true;
 			first = -1;
@@ -922,9 +928,10 @@ _send_step_complete_msgs(stepd_step_rec_t *job)
 		start = last + 1;
 	}
 
-	if (!sent_own_comp_msg)
+	if (!sent_own_comp_msg) {
 		_one_step_complete_msg(job, step_complete.rank,
 				       step_complete.rank);
+	}
 
 	pthread_mutex_unlock(&step_complete.lock);
 }
@@ -2526,7 +2533,7 @@ _run_script_as_user(const char *name, const char *path, stepd_step_rec_t *job,
 		exec_wait_child_wait_for_parent (ei);
 
 		execve(path, argv, env);
-		error("execve(): %m");
+		error("execve(%s): %m", path);
 		exit(127);
 	}
 

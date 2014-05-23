@@ -519,7 +519,13 @@ typedef enum task_dist_states {
 	SLURM_DIST_BLOCK_CYCLIC, /* block for node and cyclic for lllp  */
 	SLURM_DIST_BLOCK_BLOCK,	/* block for node and block for lllp  */
 	SLURM_NO_LLLP_DIST,	/* No distribution specified for lllp */
-	SLURM_DIST_UNKNOWN	/* unknown dist */
+	SLURM_DIST_UNKNOWN,	/* unknown dist */
+	SLURM_DIST_CYCLIC_CFULL, /* Same as cyclic:cyclic except for
+				    multi-cpu tasks cyclically
+				    bind cpus */
+	SLURM_DIST_BLOCK_CFULL, /* Same as block:cyclic except for
+				   multi-cpu tasks cyclically
+				   bind cpus  */
 } task_dist_states_t;
 
 /* Open stdout/err file mode, 0 for system default (JobFileAppend) */
@@ -545,17 +551,28 @@ typedef enum cpu_bind_type {	/* cpu binding type from --cpu_bind=... */
 	CPU_BIND_LDMAP	   = 0x400,/* =map_ldom:<list of locality domains> */
 	CPU_BIND_LDMASK	   = 0x800,/* =mask_ldom:<list of ldom masks> */
 
+	/* the following is used primarily for the
+	   --hint=nomultithread when -mblock:block is requested. */
+	CPU_BIND_ONE_THREAD_PER_CORE = 0x2000,/* Only bind to one
+					       * thread of a core */
+
 	/* the following is used only as a flag for expressing
 	 * the contents of TaskPluginParams */
 	CPU_BIND_CPUSETS   = 0x8000
 } cpu_bind_type_t;
 
-/* Flag to indicate that cpu_freq is a range: low,medium,high
+/* Flag to indicate that cpu_freq is a range: low,medium,high,high-1
  * instead of an integer value in kilohertz */
-#define CPU_FREQ_RANGE_FLAG 0x80000000
-#define CPU_FREQ_LOW        0x80000001
-#define CPU_FREQ_MEDIUM     0x80000002
-#define CPU_FREQ_HIGH       0x80000003
+#define CPU_FREQ_RANGE_FLAG	0x80000000
+#define CPU_FREQ_LOW		0x80000001
+#define CPU_FREQ_MEDIUM		0x80000002
+#define CPU_FREQ_HIGH		0x80000003
+#define CPU_FREQ_HIGHM1		0x80000004
+#define CPU_FREQ_PERFORMANCE	0x80000005
+#define CPU_FREQ_POWERSAVE	0x80000006
+#define CPU_FREQ_USERSPACE	0x80000007
+#define CPU_FREQ_ONDEMAND	0x80000008
+#define CPU_FREQ_CONSERVATIVE	0x80000009
 
 typedef enum mem_bind_type {    /* memory binding type from --mem_bind=... */
 	/* verbose can be set with any other flag */
@@ -662,16 +679,22 @@ enum ctx_keys {
 			  * node health check at all.
 			  */
 
-#define CR_ONE_TASK_PER_CORE 0x0100
 /* By default, schedule only one task per core.
- * Without this option, tasks would be
- * allocated threads. */
+ * Without this option, tasks would be allocated threads. */
+#define CR_ONE_TASK_PER_CORE 0x0100
+
+/* Pack tasks tightly onto allocated nodes rather than distributing them evenly
+ * across available nodes */
+#define CR_PACK_NODES  0x0200
+
+/* By default, distribute cores using a block approach inside the nodes */
 #define CR_CORE_DEFAULT_DIST_BLOCK 0x1000
-/* By default, distribute cores using a block
- * approach inside the nodes */
-#define CR_ALLOCATE_FULL_SOCKET 0x2000
+
 /* Allocate full sockets to jobs rather than individual cores */
+#define CR_ALLOCATE_FULL_SOCKET 0x2000
+
 #define CR_LLN		0x4000  /* Select nodes by "least loaded." */
+
 
 #define MEM_PER_CPU  0x80000000
 #define SHARED_FORCE 0x8000
@@ -709,6 +732,9 @@ enum ctx_keys {
 #define PRIORITY_FLAGS_DEPTH_OBLIVIOUS	0x0008	/* Flag to use depth oblivious
 						 * formula for computing
 						 * hierarchical fairshare */
+#define PRIORITY_FLAGS_CALCULATE_RUNNING 0x0010	/* Calculate priorities for
+						 * running jobs, not only the
+						 * pending jobs. */
 /*****************************************************************************\
  *      SLURM HOSTLIST FUNCTIONS
 \*****************************************************************************/
@@ -1578,13 +1604,15 @@ typedef struct node_info {
 	uint16_t boards;        /* total number of boards per node  */
 	time_t boot_time;	/* time of node boot */
 	uint16_t cores;         /* number of cores per socket       */
+	uint32_t cpu_load;	/* CPU load * 100 */
 	uint16_t cpus;		/* configured count of cpus running on
 				 * the node */
 	acct_gather_energy_t *energy;	 /* energy data */
 	ext_sensors_data_t *ext_sensors; /* external sensor data */
 	char *features;		/* list of a node's features */
 	char *gres;		/* list of a node's generic resources */
-	uint32_t cpu_load;	/* CPU load * 100 */
+	char *gres_drain;	/* list of drained GRES */
+	char *gres_used;	/* list of GRES in current use */
 	char *name;		/* node name to slurm */
 	char *node_addr;	/* communication name (optional) */
 	char *node_hostname;	/* node's hostname (optional) */
@@ -1596,15 +1624,15 @@ typedef struct node_info {
 				 * no reason is set. */
 	uint32_t reason_uid;   	/* User that set the reason, ignore if
 				 * no reason is set. */
+	dynamic_plugin_data_t *select_nodeinfo;  /* opaque data structure,
+						  * use
+						  * slurm_get_select_nodeinfo()
+						  * to access contents */
 	time_t slurmd_start_time;/* time of slurmd startup */
 	uint16_t sockets;       /* total number of sockets per node */
 	uint16_t threads;       /* number of threads per core */
 	uint32_t tmp_disk;	/* configured MB of total disk in TMP_FS */
 	uint32_t weight;	/* arbitrary priority of node for scheduling */
-	dynamic_plugin_data_t *select_nodeinfo;  /* opaque data structure,
-						  * use
-						  * slurm_get_select_nodeinfo()
-						  * to access contents */
 	char *version;		 /* Slurm version number */
 } node_info_t;
 
@@ -1995,6 +2023,7 @@ typedef struct reservation_name_msg {
 #define DEBUG_FLAG_FILESYSTEM 	0x00800000      /* AcctGatherFilesystem plugin */
 #define DEBUG_FLAG_JOB_CONT 	0x01000000      /* JobContainer plugin */
 #define DEBUG_FLAG_TASK 	0x02000000      /* TaskType plugin */
+#define DEBUG_FLAG_PROTOCOL     0x04000000
 
 #define GROUP_FORCE		0x8000	/* if set, update group membership
 					 * info even if no updates to
@@ -2020,7 +2049,10 @@ typedef struct reservation_name_msg {
 #define HEALTH_CHECK_NODE_MIXED	0x0004	/* execute on partially allocated nodes */
 #define HEALTH_CHECK_NODE_ANY	0xffff	/* execute on all node states */
 
-#define PROLOG_FLAG_ALLOC 0x0001 /* execute prolog upon allocation */
+#define PROLOG_FLAG_ALLOC  0x0001 /* execute prolog upon allocation */
+#define PROLOG_FLAG_NOHOLD 0x0002 /* don't block salloc/srun until
+				   * slurmctld knows the prolog has
+				   * run on each node in the allocation */
 
 #define LOG_FMT_ISO8601_MS      0
 #define LOG_FMT_ISO8601         1
@@ -2058,6 +2090,7 @@ typedef struct slurm_ctl_conf {
 	uint16_t batch_start_timeout;	/* max secs for batch job to start */
 	time_t boot_time;	/* time slurmctld last booted */
 	char *checkpoint_type;	/* checkpoint plugin type */
+	char *chos_loc;		/* Chroot OS path */
 	char *core_spec_plugin;	/* core specialization plugin name */
 	char *cluster_name;     /* general name of the entire cluster */
 	uint16_t complete_wait;	/* seconds to wait for job completion before
@@ -2127,6 +2160,7 @@ typedef struct slurm_ctl_conf {
 	uint32_t max_mem_per_cpu; /* maximum MB memory per allocated CPU */
 	uint32_t max_step_cnt;	/* maximum number of steps per job */
 	uint16_t max_tasks_per_node; /* maximum tasks per node */
+	uint16_t mem_limit_enforce; /* Enforce mem limit at runtime y|n */
 	uint16_t min_job_age;	/* COMPLETED jobs over this age (secs)
 				 * purged from in memory records */
 	char *mpi_default;	/* Default version of MPI in use */
@@ -2150,6 +2184,7 @@ typedef struct slurm_ctl_conf {
 				  * see PRIORITY_FLAGS_* above */
 	uint32_t priority_max_age; /* time when not to add any more
 				    * priority to a job if reached */
+    	char *priority_params;	/* priority plugin parameters */
 	uint16_t priority_reset_period; /* when to clear usage,
 					 * see PRIORITY_RESET_* */
 	char *priority_type;    /* priority type plugin */
@@ -2171,6 +2206,8 @@ typedef struct slurm_ctl_conf {
 	char *propagate_rlimits_except;/* Propagate all rlimits except these */
 	char *reboot_program;	/* program to reboot the node */
 	uint16_t reconfig_flags;/* see RECONFIG_* */
+	char *requeue_exit;      /* requeue exit values */
+	char *requeue_exit_hold; /* requeue exit hold values */
 	char *resume_program;	/* program to make nodes full power */
 	uint16_t resume_rate;	/* nodes to make full power, per minute */
 	uint16_t resume_timeout;/* time required in order to perform a node

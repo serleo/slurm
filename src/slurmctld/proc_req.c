@@ -74,6 +74,7 @@
 #include "src/common/xstring.h"
 #include "src/common/slurm_ext_sensors.h"
 #include "src/common/slurm_acct_gather.h"
+#include "src/common/slurm_protocol_interface.h"
 
 #include "src/slurmctld/agent.h"
 #include "src/slurmctld/front_end.h"
@@ -196,7 +197,7 @@ extern int prolog_complete(uint32_t job_id, bool requeue,
  * slurmctld_req  - Process an individual RPC request
  * IN/OUT msg - the request message, data associated with the message is freed
  */
-void slurmctld_req (slurm_msg_t * msg)
+void slurmctld_req(slurm_msg_t *msg, connection_arg_t *arg)
 {
 	DEF_TIMERS;
 	int i, rpc_type_index = -1, rpc_user_index = -1;
@@ -241,6 +242,19 @@ void slurmctld_req (slurm_msg_t * msg)
 		break;
 	}
 	slurm_mutex_unlock(&rpc_mutex);
+
+	/* Debug the protocol layer.
+	 */
+	if (slurmctld_conf.debug_flags & DEBUG_FLAG_PROTOCOL) {
+		char *p;
+		char inetbuf[64];
+
+		p = rpc_num2string(msg->msg_type);
+		_slurm_print_slurm_addr(&arg->cli_addr,
+					inetbuf,
+					sizeof(inetbuf));
+		info("%s: received opcode %s from %s", __func__, p, inetbuf);
+	}
 
 	switch (msg->msg_type) {
 	case REQUEST_RESOURCE_ALLOCATION:
@@ -610,6 +624,7 @@ void _fill_ctld_conf(slurm_ctl_conf_t * conf_ptr)
 	conf_ptr->boot_time           = slurmctld_config.boot_time;
 
 	conf_ptr->checkpoint_type     = xstrdup(conf->checkpoint_type);
+	conf_ptr->chos_loc            = xstrdup(conf->chos_loc);
 	conf_ptr->cluster_name        = xstrdup(conf->cluster_name);
 	conf_ptr->complete_wait       = conf->complete_wait;
 	conf_ptr->control_addr        = xstrdup(conf->control_addr);
@@ -682,6 +697,7 @@ void _fill_ctld_conf(slurm_ctl_conf_t * conf_ptr)
 	conf_ptr->max_mem_per_cpu     = conf->max_mem_per_cpu;
 	conf_ptr->max_step_cnt        = conf->max_step_cnt;
 	conf_ptr->max_tasks_per_node  = conf->max_tasks_per_node;
+	conf_ptr->mem_limit_enforce   = conf->mem_limit_enforce;
 	conf_ptr->min_job_age         = conf->min_job_age;
 	conf_ptr->mpi_default         = xstrdup(conf->mpi_default);
 	conf_ptr->mpi_params          = xstrdup(conf->mpi_params);
@@ -702,6 +718,7 @@ void _fill_ctld_conf(slurm_ctl_conf_t * conf_ptr)
 	conf_ptr->priority_favor_small= conf->priority_favor_small;
 	conf_ptr->priority_flags      = conf->priority_flags;
 	conf_ptr->priority_max_age    = conf->priority_max_age;
+	conf_ptr->priority_params     = xstrdup(conf->priority_params);
 	conf_ptr->priority_reset_period = conf->priority_reset_period;
 	conf_ptr->priority_type       = xstrdup(conf->priority_type);
 	conf_ptr->priority_weight_age = conf->priority_weight_age;
@@ -723,6 +740,8 @@ void _fill_ctld_conf(slurm_ctl_conf_t * conf_ptr)
 
 	conf_ptr->reboot_program      = xstrdup(conf->reboot_program);
 	conf_ptr->reconfig_flags      = conf->reconfig_flags;
+	conf_ptr->requeue_exit        = xstrdup(conf->requeue_exit);
+	conf_ptr->requeue_exit_hold   = xstrdup(conf->requeue_exit_hold);
 	conf_ptr->resume_program      = xstrdup(conf->resume_program);
 	conf_ptr->resume_rate         = conf->resume_rate;
 	conf_ptr->resume_timeout      = conf->resume_timeout;
@@ -1711,7 +1730,6 @@ static void _slurm_rpc_complete_job_allocation(slurm_msg_t * msg)
 		NO_LOCK, WRITE_LOCK, WRITE_LOCK, NO_LOCK
 	};
 	uid_t uid = g_slurm_auth_get_uid(msg->auth_cred, NULL);
-	bool job_requeue = false;
 
 	/* init */
 	START_TIMER;
@@ -1725,7 +1743,7 @@ static void _slurm_rpc_complete_job_allocation(slurm_msg_t * msg)
 	/* do RPC call */
 	/* Mark job and/or job step complete */
 	error_code = job_complete(comp_msg->job_id, uid,
-				  job_requeue, false, comp_msg->job_rc);
+				  false, false, comp_msg->job_rc);
 	unlock_slurmctld(job_write_lock);
 	_throttle_fini(&active_rpc_cnt);
 	END_TIMER2("_slurm_rpc_complete_job_allocation");
@@ -1766,7 +1784,7 @@ static void _slurm_rpc_complete_prolog(slurm_msg_t * msg)
 	lock_slurmctld(job_write_lock);
 
 	error_code = prolog_complete(comp_msg->job_id,
-				  job_requeue, comp_msg->prolog_rc);
+				     job_requeue, comp_msg->prolog_rc);
 
 	unlock_slurmctld(job_write_lock);
 
@@ -1930,16 +1948,13 @@ static void _slurm_rpc_complete_batch_script(slurm_msg_t * msg)
 				error_code = update_front_end(&update_node_msg);
 			}
 #else
-			update_node_msg_t update_node_msg;
-			memset(&update_node_msg, 0, sizeof(update_node_msg_t));
-			update_node_msg.node_names = comp_msg->node_name;
-			update_node_msg.node_state = NODE_STATE_DRAIN;
-			update_node_msg.reason = "batch job complete failure";
-			update_node_msg.weight = NO_VAL;
-			error_code = update_node(&update_node_msg);
+			error_code = drain_nodes(comp_msg->node_name,
+						 "batch job complete failure",
+						 getuid());
 #endif	/* !HAVE_FRONT_END */
 #endif	/* !HAVE_BG */
-			if (comp_msg->job_rc != SLURM_SUCCESS)
+			if ((comp_msg->job_rc != SLURM_SUCCESS) && job_ptr &&
+			    job_ptr->details && job_ptr->details->requeue)
 				job_requeue = true;
 			dump_job = true;
 			dump_node = true;
@@ -2787,7 +2802,6 @@ static void _slurm_rpc_step_complete(slurm_msg_t *msg)
 	slurmctld_lock_t job_write_lock = {
 		NO_LOCK, WRITE_LOCK, WRITE_LOCK, NO_LOCK };
 	uid_t uid = g_slurm_auth_get_uid(msg->auth_cred, NULL);
-	bool job_requeue = false;
 	bool dump_job = false, dump_node = false;
 
 	/* init */
@@ -2814,7 +2828,7 @@ static void _slurm_rpc_step_complete(slurm_msg_t *msg)
 
 	if (req->job_step_id == SLURM_BATCH_SCRIPT) {
 		/* FIXME: test for error, possibly cause batch job requeue */
-		error_code = job_complete(req->job_id, uid, job_requeue,
+		error_code = job_complete(req->job_id, uid, false,
 					  false, step_rc);
 		unlock_slurmctld(job_write_lock);
 		_throttle_fini(&active_rpc_cnt);
@@ -2833,7 +2847,7 @@ static void _slurm_rpc_step_complete(slurm_msg_t *msg)
 		}
 	} else {
 		error_code = job_step_complete(req->job_id, req->job_step_id,
-					       uid, job_requeue, step_rc);
+					       uid, false, step_rc);
 		unlock_slurmctld(job_write_lock);
 		_throttle_fini(&active_rpc_cnt);
 		END_TIMER2("_slurm_rpc_step_complete");
@@ -3854,12 +3868,19 @@ inline static void _slurm_rpc_requeue(slurm_msg_t * msg)
 	/* Requeue operation went all right, see if the user
 	 * wants to mark the job as special case or hold it.
 	 */
-	if (req_ptr->state & JOB_SPECIAL_EXIT)
+	if (req_ptr->state & JOB_SPECIAL_EXIT) {
 		job_ptr->job_state |= JOB_SPECIAL_EXIT;
-	if (req_ptr->state & JOB_REQUEUE_HOLD)
-		job_ptr->job_state |= JOB_REQUEUE_HOLD;
+		job_ptr->state_reason = WAIT_HELD_USER;
+		job_ptr->priority = 0;
+	}
+	if (req_ptr->state & JOB_REQUEUE_HOLD) {
+		job_ptr->state_reason = WAIT_HELD_USER;
+		job_ptr->priority = 0;
+	}
 
-	job_hold_requeue(job_ptr);
+	debug("%s: job %u state 0x%x reason %u priority %d", __func__,
+	      job_ptr->job_id, job_ptr->job_state,
+	      job_ptr->state_reason, job_ptr->priority);
 
 	info("%s: %u: %s", __func__, req_ptr->job_id, TIME_STR);
 

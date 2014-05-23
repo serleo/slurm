@@ -1,4 +1,4 @@
-.TH SCONTROL "1" "March 2014" "scontrol 14.03" "Slurm components"
+.TH SCONTROL "1" "April 2014" "scontrol 14.03" "Slurm components"
 
 .SH "NAME"
 scontrol \- Used view and modify Slurm configuration and state.
@@ -184,10 +184,10 @@ configured as hidden or partitions that are unavailable to the user's group.
 This is the default behavior.
 
 .TP
-\fBhold\fP \fIjob_id_list\fP
+\fBhold\fP \fIjob_list\fP
 Prevent a pending job from beginning started (sets it's priority to 0).
 Use the \fIrelease\fP command to permit the job to be scheduled.
-Multiple job ID values may be specified separated by spaces.
+The job_list argument is a space separated list of job IDs or job names.
 Note that when a job is held by a system administrator using the \fBhold\fP
 command, only a system administrator may release the job for execution (also
 see the \fBuhold\fP command). When the job is held by its owner, it may also
@@ -267,9 +267,9 @@ or SlurmdPort. The slurmctld daemon must be restarted if nodes are added to
 or removed from the cluster.
 
 .TP
-\fBrelease\fP \fIjob_id_list\fP
+\fBrelease\fP \fIjob_list\fP
 Release a previously held job to begin execution.
-Multiple job ID values may be specified separated by spaces.
+The job_list argument is a space separated list of job IDs or job names.
 Also see \fBhold\fR.
 
 .TP
@@ -410,9 +410,9 @@ primary SLURM controller is scheduled down.
 (Note: SLURM's primary controller will take the control back at startup.)
 
 .TP
-\fBuhold\fP \fIjob_id_list\fP
+\fBuhold\fP \fIjob_list\fP
 Prevent a pending job from being started (sets it's priority to 0).
-Multiple job ID values may be specified separated by spaces.
+The job_list argument is a space separated list of job IDs or job names.
 Use the \fIrelease\fP command to permit the job to be scheduled.
 This command is designed for a system administrator to hold a job so that
 the job owner may release it rather than requiring the intervention of a
@@ -909,8 +909,9 @@ Use quotes to enclose a reason having more than one word.
 .TP
 \fIState\fP=<state>
 Identify the state to be assigned to the node. Possible values are  "NoResp",
-"ALLOC", "ALLOCATED", "DOWN", "DRAIN", "FAIL", "FAILING", "IDLE",
-"MIXED", "MAINT", "POWER_DOWN", "POWER_UP", "RESUME" or "UNDRAIN".
+"ALLOC", "ALLOCATED", "COMPLETING", "DOWN", "DRAIN", "ERROR, "FAIL", "FAILING",
+"FUTURE" "IDLE", "MAINT", "MIXED", "PERFCTRS/NPC", "RESERVED", "POWER_DOWN",
+"POWER_UP", "RESUME" or "UNDRAIN".
 If a node is in a "MIXED" state it usually means the node is in
 multiple states.  For instance if only part of the node is "ALLOCATED"
 and the rest of the node is "IDLE" the state will be "MIXED".
@@ -918,6 +919,10 @@ If you want to remove a node from service, you typically want to set
 it's state to "DRAIN".
 "FAILING" is similar to "DRAIN" except that some applications will
 seek to relinquish those nodes before the job completes.
+"PERFCTRS/NPC" indicates that Network Performance Counters associated with this
+node are in use, rendering this node as not usable for any other jobs.
+"RESERVED" indicates the node is in an advanced reservation and not generally
+available.
 "RESUME" is not an actual node state, but will return a "DRAINED", "DRAINING",
 or "DOWN" node to service, either "IDLE" or "ALLOCATED" state as appropriate.
 "UNDRAIN" clears the node from being drained (like "RESUME"), but will

@@ -1,4 +1,4 @@
-.TH "slurm.conf" "5" "April 2014" "slurm.conf 14.11" "Slurm configuration file"
+.TH "slurm.conf" "5" "May 2014" "slurm.conf 14.11" "Slurm configuration file"
 
 .SH "NAME"
 slurm.conf \- Slurm configuration file
@@ -303,6 +303,9 @@ to a "standby" mode when the ControlMachine becomes available once again.
 This should be a node name without the full domain name.   I.e., the hostname
 returned by the \fIgethostname()\fR function cut at the first dot (e.g. use
 "tux001" rather than "tux001.my.com").
+The backup controller recovers state information from the
+\fBStateSaveLocation\fR directory, which must be readable and writable from both
+the primary and backup controllers.
 While not essential, it is recommended that you specify a backup controller.
 See  the \fBRELOCATING CONTROLLERS\fR section if you change this.
 
@@ -347,8 +350,12 @@ OpenMPI (version 1.3 or higher)
 .TP
 \fBcheckpoint/poe\fR
 for use with IBM POE (Parallel Operating Environment) only
-.TP
 .RE
+
+.TP
+\fBChosLoc\fR
+The fully qualified pathname of the chos command if the Chroot OS tool is used
+(see https://github.com/scanon/chos for details).
 
 .TP
 \fBClusterName\fR
@@ -475,6 +482,9 @@ Do not log when the slurm.conf files differs between SLURM daemons
 .TP
 \fBPriority\fB
 Job prioritization
+.TP
+\fBProtocol\fR
+Communication protocol details
 .TP
 \fBReservation\fB
 Advanced reservations
@@ -1157,6 +1167,15 @@ on a single node. The default \fBMaxTasksPerNode\fR is 128.
 May not exceed 65533.
 
 .TP
+\fBMemLimitEnforce\fR
+If set to "no" then Slurm will not terminate the job or the job step
+if they exceeds the value requested using the --mem-per-cpu option of
+salloc/sbatch/srun. This is usefull if jobs need to specify --mem-per-cpu
+for scheduling but they should not be terminate if they exceed the
+estimated value. The default value is 'yes', terminate the job/step
+if exceed the requested memory.
+
+.TP
 \fBMessageTimeout\fR
 Time permitted for a round\-trip communication to complete
 in seconds. Default value is 10 seconds. For systems with
@@ -1334,6 +1353,14 @@ The keywords below have no associated value
 \fBACCRUE_ALWAYS\fR
 If set, priority age factor will be increased despite job dependencies
 or holds.
+\fBCALCULATE_RUNNING\fR
+If set, priorities will be recalculated not only for pending jobs, but also
+running and suspended jobs.
+.TP
+\fBDEPTH_OBLIVIOUS\fR
+If set, priority will be calculated based similar to the normal multifactor
+calculation, but depth of the associations in the tree do not adversely effect
+their priority.
 .TP
 \fBSMALL_RELATIVE_TO_TIME\fR
 If set, the job's size component will be based upon not the job size alone, but
@@ -1341,12 +1368,11 @@ the job's size divided by it's time limit.
 .TP
 \fBTICKET_BASED\fR
 If set, priority will be calculated based on the ticket system.
-.TP
-\fBDEPTH_OBLIVIOUS\fR
-If set, priority will be calculated based similar to the normal multifactor
-calculation, but depth of the associations in the tree do not adversely effect
-their priority.
 .RE
+
+.TP
+\fBPriorityParameters\fR
+Arbitrary string used by the PriorityType plugin.
 
 .TP
 \fBPriorityMaxAge\fR
@@ -1550,6 +1576,13 @@ is started, no Prolog is executed. \fBAlloc\fR is useful for preparing things
 before a user starts to use any allocated resources.
 In particular, this flag is needed on a Cray system when cluster compatibility
 mode is enabled.
+.TP 6
+\fBNoHold\fR
+If set, Alloc is also set.  This will allow for salloc to not block until the
+prolog is finished on each node.  The blocking will happen when steps reach
+the slurmd and before any execution has happened in the step. This is a much
+faster way to work and if using srun to launch your tasks you should use this
+flag.
 .RE
 
 .TP
@@ -1703,6 +1736,22 @@ the definitions in the slurm.conf file.
 .RE
 
 .TP
+\fBRequeueExit\fR
+Enables automatic job requeue for jobs which exit with the specified values.
+Separate multiple exit code by a comma. Jobs will be put back in to pending
+state and later scheduled again. Restarted jobs will have the environment
+variable \fBSLURM_RESTART_COUNT\fP set to the number of times the job has been
+restarted.
+
+.TP
+\fBRequeueExitHold\fR
+Enables automatic requeue of jobs into pending state in hold, meaning their
+priority is zero. Separate multiple exit code by a comma. These jobs are put
+in the \fBJOB_SPECIAL_EXIT\fP exit state. Restarted jobs will have the
+environment variable \fBSLURM_RESTART_COUNT\fP set to the number of times the
+job has been restarted.
+
+.TP
 \fBResumeProgram\fR
 SLURM supports a mechanism to reduce power consumption on nodes that
 remain idle for an extended period of time.
@@ -1838,6 +1887,13 @@ The interpretation of this parameter varies by \fBSchedulerType\fR.
 Multiple options may be comma separated.
 .RS
 .TP
+\fBbatch_sched_delay=#\fR
+How long, in seconds, the scheduling of batch jobs can be delayed.
+This can be useful in a high\-throughput environment in which batch jobs are
+submitted at a very high rate (i.e. using the sbatch command) and one wishes
+to reduce the overhead of attempting to schedule each job at submit time.
+The default value is 3 seconds.
+.TP
 \fBbf_continue\fR
 The backfill scheduler periodically releases locks in order to permit other
 operations to proceed rather than blocking all activity for what could be an
@@ -1928,7 +1984,8 @@ Also see the \fBbf_yield_interval\fR option.
 \fBdefault_queue_depth=#\fR
 The default number of jobs to attempt scheduling (i.e. the queue depth) when a
 running job completes or other routine actions occur. The full queue will be
-tested on a less frequent basis. The default value is 100.
+tested on a less frequent basis as defined by the \fBsched_interval\fR option
+described below. The default value is 100.
 See the \fBpartition_job_depth\fR option to limit depth by partition.
 In the case of large clusters (more than 1000 nodes), configuring a relatively
 small value may be desirable.
@@ -1936,7 +1993,7 @@ Specifying a large value (say 1000 or higher) can be expected to result in
 poor system responsiveness since this scheduling logic will not release
 locks for other events to occur.
 It would be better to let the backfill scheduler process a larger number of jobs
-(see \fBmax_job_bf\fR, \fBbf_continue\fR  and other options here for more
+(see \fBbf_max_job_test\fR, \fBbf_continue\fR  and other options here for more
 information).
 .TP
 \fBdefer\fR
@@ -2000,8 +2057,9 @@ priorities of preemptable jobs.
 The logic to support this option is only available in the select/cons_res plugin.
 .TP
 \fBsched_interval=#\fR
-How frequently, in seconds, the main scheduling loop will execute if the
-\fBdefer\fR option is configured.
+How frequently, in seconds, the main scheduling loop will execute and test all
+pending jobs.
+The default value is 60 seconds.
 .RE
 
 .TP
@@ -2117,6 +2175,11 @@ The only supported options for \fBSelectType=select/linear\fR are
 \fBCR_ONE_TASK_PER_CORE\fR and
 \fBCR_Memory\fR, which treats memory as a consumable resource and
 prevents memory over subscription with job preemption or gang scheduling.
+By default \fBSelectType=select/linear\fR allocates whole nodes to jobs without
+considering their memory consumption.
+By default \fBSelectType=select/cons_res\fR, \fBSelectType=select/cray\fR, and
+\fBSelectType=select/serial\fR use \fBCR_CPU\fR, which allocates CPU to jobs
+without considering their memory consumption.
 .RS
 .TP
 The following options are supported for \fBSelectType=select/cray\fR:
@@ -2202,6 +2265,13 @@ serial jobs as idle resources will tend to be highly fragmented, resulting
 in parallel jobs being distributed across many nodes.
 Also see the partition configuration parameter \fBLLN\fR
 use the least loaded nodes in selected partitions.
+.TP
+\fBCR_Pack_Nodes\fR
+Rather than evenly distributing a job's tasks evenly across it's allocated
+nodes, pack them as tightly as possible on the nodes. For example, a job
+starting ten tasks acrosss two nodes each without this option will start
+five tasks on each of the two nodes. With this option, eight tasks will be
+started on the first node and two on the second node.
 .TP
 \fBCR_Socket\fR
 Sockets are consumable resources.
@@ -2989,14 +3059,19 @@ Also see \fBGres\fR.
 .TP
 \fBGres\fR
 A comma delimited list of generic resources specifications for a node.
-Each resource specification consists of a name followed by a colon with a
-numeric value (e.g. "Gres=bandwidth:10000,gpu:2").
-A suffix of "K", "M" or "G" may be used to multiply the number by 1024,
-1048576 or 1073741824 respectively (e.g. "Gres=bandwidth:4G,gpu:4").
+The format is: "<name>[:<type>][:no_consume]:<number>[K|M|G]".
+The first field is the resource name, which matches the GresType configuration
+parameter name.
+The optional type field might be used to identify a model of that generic
+resource.
+A generic resource can also be specified as non\-consumable (i.e. multiple
+jobs can use the same generic resource) with the optional field ":no_consume".
+The final field must specify a generic resources count.
+A suffix of "K", "M" or "G" may be used to multiply the count by 1024,
+1048576 or 1073741824 respectively.
+(e.g."Gres=gpu:tesla:1,gpu:kepler:1,bandwidth:lustre:no_consume:4G").
 By default a node has no generic resources and its maximum count is
 4,294,967,295.
-The generic resource type can optionally be specified using a third colon
-separated field after the name (e.g. "Gres=gpu:tesla:1,gpu:kepler:1").
 Also see \fBFeature\fR.
 
 .TP
@@ -3729,14 +3804,34 @@ to all of the programs.
 .TP
 \fBBASIL_RESERVATION_ID\fR
 Basil reservation ID.
-Available on Cray XT/XE systems only.
+Available on Cray systems with ALPS only.
 .TP
 \fBMPIRUN_PARTITION\fR
 BlueGene partition name.
 Available on BlueGene systems only.
 .TP
+\fBSLURM_ARRAY_JOB_ID\fR
+If this job is part of a job array, this will be set to the job ID.
+Otherwise it will not be set.
+To reference this specific task of a job array, combine
+SLURM_ARRAY_JOB_ID with SLURM_ARRAY_TASK_ID
+(e.g. "scontrol update ${SLURM_ARRAY_JOB_ID}_{$SLURM_ARRAY_TASK_ID} ...");
+Available in \fBPrologSlurmctld\fR and \fBEpilogSlurmctld\fR only.
+.TP
+\fBSLURM_ARRAY_TASK_ID\fR
+If this job is part of a job array, this will be set to the task ID.
+Otherwise it will not be set.
+To reference this specific task of a job array, combine
+SLURM_ARRAY_JOB_ID with SLURM_ARRAY_TASK_ID
+(e.g. "scontrol update ${SLURM_ARRAY_JOB_ID}_{$SLURM_ARRAY_TASK_ID} ...");
+Available in \fBPrologSlurmctld\fR and \fBEpilogSlurmctld\fR only.
+.TP
 \fBSLURM_JOB_ACCOUNT\fR
 Account name used for the job.
+Available in \fBPrologSlurmctld\fR and \fBEpilogSlurmctld\fR only.
+.TP
+\fBSLURM_JOB_CLUSTER_NAME\fR
+Name of the cluster executing for the job.
 Available in \fBPrologSlurmctld\fR and \fBEpilogSlurmctld\fR only.
 .TP
 \fBSLURM_JOB_CONSTRAINTS\fR
@@ -3759,7 +3854,6 @@ exit() function. The second number of the signal that caused the process to
 terminante if it was terminated by a signal.
 Available in \fBEpilogSlurmctld\fR only.
 .TP
-
 \fBSLURM_JOB_GID\fR
 Group ID of the job's owner.
 Available in \fBPrologSlurmctld\fR and \fBEpilogSlurmctld\fR only.
@@ -3770,6 +3864,9 @@ Available in \fBPrologSlurmctld\fR and \fBEpilogSlurmctld\fR only.
 .TP
 \fBSLURM_JOB_ID\fR
 Job ID.
+CAUTION: If this job is the first task of a job array, then Slurm commands using
+this job ID will refer to the entire job array rather than this specific task
+of the job array.
 .TP
 \fBSLURM_JOB_NAME\fR
 Name of the job.

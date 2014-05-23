@@ -1605,6 +1605,8 @@ extern int select_nodes(struct job_record *job_ptr, bool test_only,
 		max_nodes = MIN(job_ptr->details->max_nodes,
 				part_ptr->max_nodes);
 
+	max_nodes = MIN(max_nodes, acct_policy_get_max_nodes(job_ptr));
+
 	if (job_ptr->details->req_node_bitmap && job_ptr->details->max_nodes) {
 		i = bit_set_count(job_ptr->details->req_node_bitmap);
 		if (i > job_ptr->details->max_nodes) {
@@ -1635,7 +1637,20 @@ extern int select_nodes(struct job_record *job_ptr, bool test_only,
 	}
 
 	if ((error_code == SLURM_SUCCESS) && select_bitmap) {
-		uint32_t node_cnt = bit_set_count(select_bitmap);
+		uint32_t node_cnt = NO_VAL;
+#ifdef HAVE_BG
+		xassert(job_ptr->select_jobinfo);
+		select_g_select_jobinfo_get(job_ptr->select_jobinfo,
+					    SELECT_JOBDATA_NODE_CNT, &node_cnt);
+		if (node_cnt == NO_VAL) {
+			/* This should never happen */
+			node_cnt = bit_set_count(select_bitmap);
+			error("node_cnt not available at %s:%d\n",
+			      __FILE__, __LINE__);
+		}
+#else
+		node_cnt = bit_set_count(select_bitmap);
+#endif
 		if (!acct_policy_job_runnable_post_select(
 			    job_ptr, node_cnt, job_ptr->total_cpus,
 			    job_ptr->details->pn_min_memory)) {
@@ -1728,12 +1743,7 @@ extern int select_nodes(struct job_record *job_ptr, bool test_only,
 			job_ptr->time_limit = part_ptr->max_time;
 	}
 
-	if (job_ptr->time_limit == INFINITE)
-		job_ptr->end_time = job_ptr->start_time +
-				    (365 * 24 * 60 * 60); /* secs in year */
-	else
-		job_ptr->end_time = job_ptr->start_time +
-			(job_ptr->time_limit * 60);   /* secs */
+	job_end_time_reset(job_ptr);
 
 	if (select_g_job_begin(job_ptr) != SLURM_SUCCESS) {
 		/* Leave job queued, something is hosed */
@@ -1802,12 +1812,9 @@ extern int select_nodes(struct job_record *job_ptr, bool test_only,
 	slurm_sched_g_newalloc(job_ptr);
 
 	/* Request asynchronous launch of a prolog for a
-	 * non batch job. For a batch job the prolog will be
-	 * started synchroniously by slurmd. */
-	if (job_ptr->batch_flag == 0 &&
-		(slurmctld_conf.prolog_flags & PROLOG_FLAG_ALLOC)) {
+	 * non batch job. */
+	if (slurmctld_conf.prolog_flags & PROLOG_FLAG_ALLOC)
 		_launch_prolog(job_ptr);
-	}
 
       cleanup:
 	if (preemptee_job_list)
@@ -1825,6 +1832,11 @@ extern int select_nodes(struct job_record *job_ptr, bool test_only,
 		xfree(node_set_ptr);
 	}
 
+#ifdef HAVE_BG
+	if (error_code != SLURM_SUCCESS)
+		free_job_resources(&job_ptr->job_resrcs);
+#endif
+
 	return error_code;
 }
 
@@ -1837,15 +1849,22 @@ static void _launch_prolog(struct job_record *job_ptr)
 {
 	prolog_launch_msg_t *prolog_msg_ptr;
 	agent_arg_t *agent_arg_ptr;
-	prolog_msg_ptr = (prolog_launch_msg_t *)
-				xmalloc(sizeof(prolog_launch_msg_t));
 
 	xassert(job_ptr);
-	xassert(job_ptr->batch_host);
-	xassert(prolog_msg_ptr);
+
+#ifdef HAVE_FRONT_END
+	/* For a batch job the prolog will be
+	 * started synchroniously by slurmd.
+	 */
+	if (job_ptr->batch_flag)
+		return;
+#endif
+
+	prolog_msg_ptr = xmalloc(sizeof(prolog_launch_msg_t));
 
 	/* Locks: Write job */
-	job_ptr->state_reason = WAIT_PROLOG;
+	if (!(slurmctld_conf.prolog_flags & PROLOG_FLAG_NOHOLD))
+		job_ptr->state_reason = WAIT_PROLOG;
 
 	prolog_msg_ptr->job_id = job_ptr->job_id;
 	prolog_msg_ptr->uid = job_ptr->user_id;
@@ -1862,19 +1881,17 @@ static void _launch_prolog(struct job_record *job_ptr)
 
 	agent_arg_ptr = (agent_arg_t *) xmalloc(sizeof(agent_arg_t));
 	agent_arg_ptr->retry = 0;
-	agent_arg_ptr->node_count = 1;
-  #ifdef HAVE_FRONT_END
+#ifdef HAVE_FRONT_END
 	xassert(job_ptr->front_end_ptr);
 	xassert(job_ptr->front_end_ptr->name);
 	agent_arg_ptr->protocol_version =
 		job_ptr->front_end_ptr->protocol_version;
 	agent_arg_ptr->hostlist = hostlist_create(job_ptr->front_end_ptr->name);
-  #else
-	struct node_record *node_ptr;
-	if ((node_ptr = find_node_record(job_ptr->batch_host)))
-		agent_arg_ptr->protocol_version = node_ptr->protocol_version;
-	agent_arg_ptr->hostlist = hostlist_create(job_ptr->batch_host);
-  #endif
+	agent_arg_ptr->node_count = 1;
+#else
+	agent_arg_ptr->hostlist = hostlist_create(job_ptr->nodes);
+	agent_arg_ptr->node_count = job_ptr->node_cnt;
+#endif
 	agent_arg_ptr->msg_type = REQUEST_LAUNCH_PROLOG;
 	agent_arg_ptr->msg_args = (void *) prolog_msg_ptr;
 

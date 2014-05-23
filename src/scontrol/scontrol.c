@@ -1489,6 +1489,7 @@ _update_it (int argc, char *argv[])
 	int node_tag = 0, part_tag = 0, job_tag = 0;
 	int block_tag = 0, sub_tag = 0, res_tag = 0;
 	int debug_tag = 0, step_tag = 0, front_end_tag = 0;
+	int jerror_code = SLURM_SUCCESS;
 
 	/* First identify the entity to update */
 	for (i=0; i<argc; i++) {
@@ -1534,7 +1535,7 @@ _update_it (int argc, char *argv[])
 	 * aren't any other duplicate tags.  */
 
 	if (job_tag)
-		error_code = scontrol_update_job (argc, argv);
+		jerror_code = scontrol_update_job (argc, argv);
 	else if (step_tag)
 		error_code = scontrol_update_step (argc, argv);
 	else if (res_tag)
@@ -1567,6 +1568,12 @@ _update_it (int argc, char *argv[])
 		exit_code = 1;
 		slurm_perror ("slurm_update error");
 	}
+	/* The slurm error message is already
+	 * printed for each array task in
+	 * scontrol_update_job()
+	 */
+	if (jerror_code)
+		exit_code = 1;
 }
 
 /*
@@ -1804,8 +1811,10 @@ scontrol [<OPTION>] [<COMMAND>]                                            \n\
                               descriptive string.                          \n\
      exit                     terminate scontrol                           \n\
      help                     print this description of use.               \n\
-     hold <jobid_list>        prevent specified job from starting (see release)\n\
-     holdu <jobid_list>       place user hold on specified job (see release)\n\
+     hold <job_list>          prevent specified job from starting. <job_list>\n\
+			      is either a space separate list of job IDs or\n\
+			      job names \n\
+     holdu <job_list>         place user hold on specified job (see hold)  \n\
      hide                     do not display information about hidden      \n\
 			      partitions                                   \n\
      listpids <job_id<.step>> List pids associated with the given jobid, or\n\
@@ -1823,7 +1832,7 @@ scontrol [<OPTION>] [<COMMAND>]                                            \n\
      reboot_nodes [<nodelist>]  reboot the nodes when they become idle.    \n\
                               By default all nodes are rebooted.           \n\
      reconfigure              re-read configuration files.                 \n\
-     release <jobid_list>     permit specified job to start (see hold)     \n\
+     release <job_list>       permit specified job to start (see hold)     \n\
      requeue <job_id>         re-queue a batch job                         \n\
      requeuehold <job_id>     re-queue and hold a batch                    \n\
      resume <jobid_list>      resume previously suspended job (see suspend)\n\
@@ -1834,9 +1843,9 @@ scontrol [<OPTION>] [<COMMAND>]                                            \n\
 			      is all records.                              \n\
      shutdown <OPTS>          shutdown slurm daemons                       \n\
 			      (the primary controller will be stopped)     \n\
-     suspend <jobid_list>     susend specified job (see resume)            \n\
+     suspend <job_list>       susend specified job (see resume)            \n\
      takeover                 ask slurm backup controller to take over     \n\
-     uhold <jobid_list>       place user hold on specified job (see release)\n\
+     uhold <jobid_list>       place user hold on specified job (see hold)\n\
      update <SPECIFICATIONS>  update job, node, partition, reservation,    \n\
 			      step or bluegene block/submp configuration   \n\
      verbose                  enable detailed logging.                     \n\

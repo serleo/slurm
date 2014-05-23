@@ -279,6 +279,11 @@ extern void *slurm_ctl_conf_2_key_pairs (slurm_ctl_conf_t* slurm_ctl_conf_ptr)
 	list_append(ret_list, key_pair);
 
 	key_pair = xmalloc(sizeof(config_key_pair_t));
+	key_pair->name = xstrdup("ChosLoc");
+	key_pair->value = xstrdup(slurm_ctl_conf_ptr->chos_loc);
+	list_append(ret_list, key_pair);
+
+	key_pair = xmalloc(sizeof(config_key_pair_t));
 	key_pair->name = xstrdup("ClusterName");
 	key_pair->value = xstrdup(slurm_ctl_conf_ptr->cluster_name);
 	list_append(ret_list, key_pair);
@@ -664,6 +669,14 @@ extern void *slurm_ctl_conf_2_key_pairs (slurm_ctl_conf_t* slurm_ctl_conf_ptr)
 	key_pair->value = xstrdup(tmp_str);
 	list_append(ret_list, key_pair);
 
+	key_pair = xmalloc(sizeof(config_key_pair_t));
+	key_pair->name = xstrdup("MemLimitEnforce");
+	if (slurm_ctl_conf_ptr->mem_limit_enforce)
+		key_pair->value = xstrdup("yes");
+	else
+		key_pair->value = xstrdup("no");
+	list_append(ret_list, key_pair);
+
 	snprintf(tmp_str, sizeof(tmp_str), "%u sec",
 		 slurm_ctl_conf_ptr->msg_timeout);
 	key_pair = xmalloc(sizeof(config_key_pair_t));
@@ -733,6 +746,11 @@ extern void *slurm_ctl_conf_2_key_pairs (slurm_ctl_conf_t* slurm_ctl_conf_ptr)
 	key_pair->value = xstrdup(slurm_ctl_conf_ptr->preempt_type);
 	list_append(ret_list, key_pair);
 
+	key_pair = xmalloc(sizeof(config_key_pair_t));
+	key_pair->name = xstrdup("PriorityParameters");
+	key_pair->value = xstrdup(slurm_ctl_conf_ptr->priority_params);
+	list_append(ret_list, key_pair);
+
 	if (strcmp(slurm_ctl_conf_ptr->priority_type, "priority/basic") == 0) {
 		key_pair = xmalloc(sizeof(config_key_pair_t));
 		key_pair->name = xstrdup("PriorityType");
@@ -760,11 +778,10 @@ extern void *slurm_ctl_conf_2_key_pairs (slurm_ctl_conf_t* slurm_ctl_conf_ptr)
 		key_pair->value = xstrdup(tmp_str);
 		list_append(ret_list, key_pair);
 
-		snprintf(tmp_str, sizeof(tmp_str), "%u",
-			 slurm_ctl_conf_ptr->priority_flags);
 		key_pair = xmalloc(sizeof(config_key_pair_t));
 		key_pair->name = xstrdup("PriorityFlags");
-		key_pair->value = xstrdup(tmp_str);
+		key_pair->value = priority_flags_string(slurm_ctl_conf_ptr->
+							priority_flags);
 		list_append(ret_list, key_pair);
 
 		secs2time_str((time_t) slurm_ctl_conf_ptr->priority_max_age,
@@ -877,6 +894,16 @@ extern void *slurm_ctl_conf_2_key_pairs (slurm_ctl_conf_t* slurm_ctl_conf_ptr)
 	key_pair->name = xstrdup("ReconfigFlags");
 	key_pair->value =
 		reconfig_flags2str(slurm_ctl_conf_ptr->reconfig_flags);
+	list_append(ret_list, key_pair);
+
+	key_pair = xmalloc(sizeof(config_key_pair_t));
+	key_pair->name = xstrdup("RequeueExit");
+	key_pair->value = xstrdup(slurm_ctl_conf_ptr->requeue_exit);
+	list_append(ret_list, key_pair);
+
+	key_pair = xmalloc(sizeof(config_key_pair_t));
+	key_pair->name = xstrdup("RequeueExitHold");
+	key_pair->value = xstrdup(slurm_ctl_conf_ptr->requeue_exit_hold);
 	list_append(ret_list, key_pair);
 
 	key_pair = xmalloc(sizeof(config_key_pair_t));

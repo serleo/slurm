@@ -77,30 +77,6 @@ static void _job_init_task_info(stepd_step_rec_t *job, uint32_t **gtid,
 				char *ifname, char *ofname, char *efname);
 static void _task_info_destroy(stepd_step_task_info_t *t, uint16_t multi_prog);
 
-static int _check_acct_freq_task(uint32_t job_mem_lim, char *acctg_freq)
-{
-	int task_freq;
-
-	if (!job_mem_lim || !conf->acct_freq_task)
-		return 0;
-
-	task_freq = acct_gather_parse_freq(PROFILE_TASK, acctg_freq);
-
-	if (task_freq == -1)
-		return 0;
-
-	if ((task_freq == 0) || (task_freq > conf->acct_freq_task)) {
-		error("Can't set frequency to %d, it is higher than %u.  "
-		      "We need it to be at least at this level to "
-		      "monitor memory usage.",
-		      task_freq, conf->acct_freq_task);
-		slurm_seterrno (ESLURMD_INVALID_ACCT_FREQ);
-		return 1;
-	}
-
-	return 0;
-}
-
 /* returns 0 if invalid gid, otherwise returns 1.  Set gid with
  * correct gid if root launched job.  Also set user_name
  * if not already set. */
@@ -172,7 +148,7 @@ static char *
 _batchfilename(stepd_step_rec_t *job, const char *name)
 {
 	if (name == NULL) {
-		if (job->array_task_id == (uint16_t) NO_VAL)
+		if (job->array_task_id == NO_VAL)
 			return fname_create(job, "slurm-%J.out", 0);
 		else
 			return fname_create(job, "slurm-%A_%a.out", 0);
@@ -318,7 +294,7 @@ stepd_step_rec_create(launch_tasks_request_msg_t *msg)
 	if (!_valid_uid_gid((uid_t)msg->uid, &(msg->gid), &(msg->user_name)))
 		return NULL;
 
-	if (_check_acct_freq_task(msg->job_mem_lim, msg->acctg_freq))
+	if (acct_gather_check_acct_freq_task(msg->job_mem_lim, msg->acctg_freq))
 		return NULL;
 
 	job = xmalloc(sizeof(stepd_step_rec_t));
@@ -363,7 +339,7 @@ stepd_step_rec_create(launch_tasks_request_msg_t *msg)
 
 	job->env     = _array_copy(msg->envc, msg->env);
 	job->array_job_id  = msg->job_id;
-	job->array_task_id = (uint16_t) NO_VAL;
+	job->array_task_id = NO_VAL;
 	for (i = 0; i < msg->envc; i++) {
 		/*                         1234567890123456789 */
 		if (!strncmp(msg->env[i], "SLURM_ARRAY_JOB_ID=", 19))
@@ -447,10 +423,16 @@ stepd_step_rec_create(launch_tasks_request_msg_t *msg)
 	format_core_allocs(msg->cred, conf->node_name, conf->cpus,
 			   &job->job_alloc_cores, &job->step_alloc_cores,
 			   &job->job_mem, &job->step_mem);
-	if (job->step_mem) {
+
+	/* If users have configured MemLimitEnforce=no
+	 * in their slurm.conf keep going.
+	 */
+	if (job->step_mem
+	    && conf->mem_limit_enforce) {
 		jobacct_gather_set_mem_limit(job->jobid, job->stepid,
 					     job->step_mem);
-	} else if (job->job_mem) {
+	} else if (job->job_mem
+		   && conf->mem_limit_enforce) {
 		jobacct_gather_set_mem_limit(job->jobid, job->stepid,
 					     job->job_mem);
 	}
@@ -491,7 +473,7 @@ batch_stepd_step_rec_create(batch_job_launch_msg_t *msg)
 	if (!_valid_uid_gid((uid_t)msg->uid, &(msg->gid), &(msg->user_name)))
 		return NULL;
 
-	if (_check_acct_freq_task(msg->job_mem, msg->acctg_freq))
+	if (acct_gather_check_acct_freq_task(msg->job_mem, msg->acctg_freq))
 		return NULL;
 
 	job = xmalloc(sizeof(stepd_step_rec_t));
@@ -553,9 +535,11 @@ batch_stepd_step_rec_create(batch_job_launch_msg_t *msg)
 	format_core_allocs(msg->cred, conf->node_name, conf->cpus,
 			   &job->job_alloc_cores, &job->step_alloc_cores,
 			   &job->job_mem, &job->step_mem);
-	if (job->step_mem)
+	if (job->step_mem
+		&& conf->mem_limit_enforce)
 		jobacct_gather_set_mem_limit(job->jobid, NO_VAL, job->step_mem);
-	else if (job->job_mem)
+	else if (job->job_mem
+		&& conf->mem_limit_enforce)
 		jobacct_gather_set_mem_limit(job->jobid, NO_VAL, job->job_mem);
 
 	get_cred_gres(msg->cred, conf->node_name,

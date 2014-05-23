@@ -87,6 +87,7 @@
 #include "src/common/uid.h"
 #include "src/common/xmalloc.h"
 #include "src/common/xstring.h"
+#include "src/common/util-net.h"
 
 #include "src/api/pmi_server.h"
 
@@ -124,6 +125,7 @@
 #define OPT_CORE_SPEC   0x1a
 #define OPT_PROFILE     0x20
 #define OPT_EXPORT	0x21
+#define OPT_HINT	0x22
 
 /* generic getopt_long flags, integers and *not* valid characters */
 #define LONG_OPT_HELP        0x100
@@ -195,6 +197,8 @@
 #define LONG_OPT_LAUNCH_CMD      0x156
 #define LONG_OPT_PROFILE         0x157
 #define LONG_OPT_EXPORT          0x158
+#define LONG_OPT_PRIORITY        0x160
+
 
 extern char **environ;
 
@@ -527,6 +531,9 @@ static void _opt_default()
 	opt.wait4switch = -1;
 	opt.launcher_opts = NULL;
 	opt.launch_cmd = false;
+
+	opt.nice = 0;
+	opt.priority = 0;
 }
 
 /*---[ env var processing ]-----------------------------------------------*/
@@ -568,6 +575,7 @@ env_vars_t env_vars[] = {
 {"SLURM_EXPORT_ENV",    OPT_STRING,     &opt.export_env,    NULL             },
 {"SLURM_GEOMETRY",      OPT_GEOMETRY,   NULL,               NULL             },
 {"SLURM_GRES",          OPT_STRING,     &opt.gres,          NULL             },
+{"SLURM_HINT",          OPT_HINT,       NULL,               NULL             },
 {"SLURM_IMMEDIATE",     OPT_IMMEDIATE,  NULL,               NULL             },
 {"SLURM_IOLOAD_IMAGE",  OPT_STRING,     &opt.ramdiskimage,  NULL             },
 /* SLURM_JOBID was used in slurm version 1.3 and below, it is now vestigial */
@@ -687,7 +695,17 @@ _process_env_var(env_vars_t *e, const char *val)
 		if (cpu_freq_verify_param(val, &opt.cpu_freq))
 			error("Invalid --cpu-freq argument: %s. Ignored", val);
 		break;
-
+	case OPT_HINT:
+		/* Keep after other options filled in */
+		if (verify_hint(val,
+				&opt.sockets_per_node,
+				&opt.cores_per_socket,
+				&opt.threads_per_core,
+				&opt.ntasks_per_core,
+				&opt.cpu_bind_type)) {
+			exit(error_exit);
+		}
+		break;
 	case OPT_MEM_BIND:
 		if (slurm_verify_mem_bind(val, &opt.mem_bind,
 					  &opt.mem_bind_type))
@@ -909,6 +927,7 @@ static void _set_options(const int argc, char **argv)
 		{"ntasks-per-node",  required_argument, 0, LONG_OPT_NTASKSPERNODE},
 		{"ntasks-per-socket",required_argument, 0, LONG_OPT_NTASKSPERSOCKET},
 		{"open-mode",        required_argument, 0, LONG_OPT_OPEN_MODE},
+		{"priority",         required_argument, 0, LONG_OPT_PRIORITY},
 		{"profile",          required_argument, 0, LONG_OPT_PROFILE},
 		{"prolog",           required_argument, 0, LONG_OPT_PROLOG},
 		{"propagate",        optional_argument, 0, LONG_OPT_PROPAGATE},
@@ -1003,7 +1022,10 @@ static void _set_options(const int argc, char **argv)
 		case (int)'D':
 			opt.cwd_set = true;
 			xfree(opt.cwd);
-			opt.cwd = xstrdup(optarg);
+			if (is_full_path(optarg))
+				opt.cwd = xstrdup(optarg);
+			else
+				opt.cwd = make_full_path(optarg);
 			break;
 		case (int)'e':
 			if (opt.pty) {
@@ -1416,6 +1438,19 @@ static void _set_options(const int argc, char **argv)
 				}
 			}
 			break;
+		case LONG_OPT_PRIORITY: {
+			long long priority = strtoll(optarg, NULL, 10);
+			if (priority < 0) {
+				error("Priority must be >= 0");
+				exit(error_exit);
+			}
+			if (priority >= NO_VAL) {
+				error("Priority must be < %i", NO_VAL);
+				exit(error_exit);
+			}
+			opt.priority = priority;
+			break;
+		}
 		case LONG_OPT_MULTI:
 			opt.multi_prog = true;
 			break;
@@ -2544,6 +2579,7 @@ static void _help(void)
 "  -o, --output=out            location of stdout redirection\n"
 "  -O, --overcommit            overcommit resources\n"
 "  -p, --partition=partition   partition requested\n"
+"      --priority=value        set the priority of the job to value\n"
 "      --prolog=program        run \"program\" before launching job step\n"
 "      --profile=value         enable acct_gather_profile for detailed data\n"
 "                              value is all or none or any combination of\n"
@@ -2560,7 +2596,10 @@ static void _help(void)
 "                              from\n"
 "  -s, --share                 share nodes with other jobs\n"
 "  -S, --core-spec=cores       count of reserved cores\n"
+"      --signal=[B:]num[@time] send signal when time limit within time seconds\n"
 "      --slurmd-debug=level    slurmd debug level\n"
+"      --switches=max-switches{@max-time-to-wait}\n"
+"                              Optimum switches and max time to wait for optimum\n"
 "      --task-epilog=program   run \"program\" after launching task\n"
 "      --task-prolog=program   run \"program\" before launching task\n"
 "  -T, --threads=threads       set srun launch fanout\n"
@@ -2571,8 +2610,6 @@ static void _help(void)
 "  -W, --wait=sec              seconds to wait after first task exits\n"
 "                              before killing job\n"
 "  -X, --disable-status        Disable Ctrl-C status feature\n"
-"      --switches=max-switches{@max-time-to-wait}\n"
-"                              Optimum switches and max time to wait for optimum\n"
 "\n"
 "Constraint options:\n"
 "      --contiguous            demand a contiguous range of nodes\n"

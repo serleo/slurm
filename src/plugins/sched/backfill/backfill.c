@@ -452,7 +452,7 @@ static void _load_config(void)
 	if (sched_params && (tmp_ptr=strstr(sched_params, "bf_interval=")))
 		backfill_interval = atoi(tmp_ptr + 12);
 	if (backfill_interval < 1) {
-		error("Invalid backfill scheduler bf_interval: %d",
+		error("Invalid SchedulerParameters bf_interval: %d",
 		      backfill_interval);
 		backfill_interval = BACKFILL_INTERVAL;
 	}
@@ -460,7 +460,7 @@ static void _load_config(void)
 	if (sched_params && (tmp_ptr=strstr(sched_params, "bf_window=")))
 		backfill_window = atoi(tmp_ptr + 10) * 60;  /* mins to secs */
 	if (backfill_window < 1) {
-		error("Invalid backfill scheduler window: %d",
+		error("Invalid SchedulerParameters bf_window: %d",
 		      backfill_window);
 		backfill_window = BACKFILL_WINDOW;
 	}
@@ -472,7 +472,7 @@ static void _load_config(void)
 	if (sched_params && (tmp_ptr=strstr(sched_params, "bf_max_job_test=")))
 		max_backfill_job_cnt = atoi(tmp_ptr + 16);
 	if (max_backfill_job_cnt < 1) {
-		error("Invalid backfill scheduler max_job_bf: %d",
+		error("Invalid SchedulerParameters bf_max_job_test: %d",
 		      max_backfill_job_cnt);
 		max_backfill_job_cnt = 50;
 	}
@@ -483,7 +483,7 @@ static void _load_config(void)
 	if (sched_params && (tmp_ptr=strstr(sched_params, "bf_resolution=")))
 		backfill_resolution = atoi(tmp_ptr + 14);
 	if (backfill_resolution < 1) {
-		error("Invalid backfill scheduler resolution: %d",
+		error("Invalid SchedulerParameters bf_resolution: %d",
 		      backfill_resolution);
 		backfill_resolution = BACKFILL_RESOLUTION;
 	}
@@ -491,7 +491,7 @@ static void _load_config(void)
 	if (sched_params && (tmp_ptr=strstr(sched_params, "bf_max_job_part=")))
 		max_backfill_job_per_part = atoi(tmp_ptr + 16);
 	if (max_backfill_job_per_part < 0) {
-		error("Invalid backfill scheduler bf_max_job_part: %d",
+		error("Invalid SchedulerParameters bf_max_job_part: %d",
 		      max_backfill_job_per_part);
 		max_backfill_job_per_part = 0;
 	}
@@ -499,7 +499,7 @@ static void _load_config(void)
 	if (sched_params && (tmp_ptr=strstr(sched_params, "bf_max_job_start=")))
 		max_backfill_jobs_start = atoi(tmp_ptr + 17);
 	if (max_backfill_jobs_start < 0) {
-		error("Invalid backfill scheduler bf_max_job_start: %d",
+		error("Invalid SchedulerParameters bf_max_job_start: %d",
 		      max_backfill_jobs_start);
 		max_backfill_jobs_start = 0;
 	}
@@ -507,7 +507,7 @@ static void _load_config(void)
 	if (sched_params && (tmp_ptr=strstr(sched_params, "bf_max_job_user=")))
 		max_backfill_job_per_user = atoi(tmp_ptr + 16);
 	if (max_backfill_job_per_user < 0) {
-		error("Invalid backfill scheduler bf_max_job_user: %d",
+		error("Invalid SchedulerParameters bf_max_job_user: %d",
 		      max_backfill_job_per_user);
 		max_backfill_job_per_user = 0;
 	}
@@ -537,7 +537,7 @@ static void _load_config(void)
 	if (sched_params && (tmp_ptr=strstr(sched_params, "max_rpc_cnt=")))
 		defer_rpc_cnt = atoi(tmp_ptr + 12);
 	if (defer_rpc_cnt < 0) {
-		error("Invalid backfill scheduler max_rpc_cnt: %d",
+		error("Invalid SchedulerParameters max_rpc_cnt: %d",
 		      defer_rpc_cnt);
 		defer_rpc_cnt = 0;
 	}
@@ -654,7 +654,7 @@ static int _attempt_backfill(void)
 	uint32_t time_limit, comp_time_limit, orig_time_limit, part_time_limit;
 	uint32_t min_nodes, max_nodes, req_nodes;
 	bitstr_t *avail_bitmap = NULL, *resv_bitmap = NULL;
-	bitstr_t *exc_core_bitmap = NULL;
+	bitstr_t *exc_core_bitmap = NULL, *non_cg_bitmap = NULL;
 	time_t now, sched_start, later_start, start_res, resv_end;
 	node_space_map_t *node_space;
 	struct timeval bf_time1, bf_time2;
@@ -664,6 +664,7 @@ static int _attempt_backfill(void)
 	uint16_t *njobs = NULL;
 	bool already_counted;
 	uint32_t reject_array_job_id = 0;
+	struct part_record *reject_array_part = NULL;
 	uint32_t job_start_cnt = 0;
 	time_t config_update = slurmctld_conf.last_update;
 	time_t part_update = last_part_update;
@@ -710,6 +711,9 @@ static int _attempt_backfill(void)
 
 	gettimeofday(&bf_time1, NULL);
 
+	non_cg_bitmap = bit_copy(cg_node_bitmap);
+	bit_not(non_cg_bitmap);
+
 	slurmctld_diag_stats.bf_queue_len = list_count(job_queue);
 	slurmctld_diag_stats.bf_queue_len_sum += slurmctld_diag_stats.
 						 bf_queue_len;
@@ -746,8 +750,8 @@ static int _attempt_backfill(void)
 		uid = xmalloc(BF_MAX_USERS * sizeof(uint32_t));
 		njobs = xmalloc(BF_MAX_USERS * sizeof(uint16_t));
 	}
-	while ((job_queue_rec = (job_queue_rec_t *)
-				list_pop_bottom(job_queue, sort_job_queue2))) {
+	sort_job_queue(job_queue);
+	while ((job_queue_rec = (job_queue_rec_t *) list_pop(job_queue))) {
 		if (((defer_rpc_cnt > 0) &&
 		     (slurmctld_config.server_thread_count >= defer_rpc_cnt)) ||
 		    (_delta_tv(&start_tv) >= sched_timeout)) {
@@ -769,6 +773,9 @@ static int _attempt_backfill(void)
 				xfree(job_queue_rec);
 				break;
 			}
+			/* cg_node_bitmap may be changed */
+			bit_copybits(non_cg_bitmap, cg_node_bitmap);
+			bit_not(non_cg_bitmap);
 			/* Reset backfill scheduling timers, resume testing */
 			sched_start = time(NULL);
 			gettimeofday(&start_tv, NULL);
@@ -794,10 +801,12 @@ static int _attempt_backfill(void)
 		if (!avail_front_end(job_ptr))
 			continue;	/* No available frontend for this job */
 		if (job_ptr->array_task_id != NO_VAL) {
-			if (reject_array_job_id == job_ptr->array_job_id)
+			if ((reject_array_job_id == job_ptr->array_job_id) &&
+			    (reject_array_part   == part_ptr))
 				continue;  /* already rejected array element */
 			/* assume reject whole array for now, clear if OK */
 			reject_array_job_id = job_ptr->array_job_id;
+			reject_array_part   = part_ptr;
 		}
 		job_ptr->part_ptr = part_ptr;
 
@@ -948,6 +957,9 @@ static int _attempt_backfill(void)
 				rc = 1;
 				break;
 			}
+			/* cg_node_bitmap may be changed */
+			bit_copybits(non_cg_bitmap, cg_node_bitmap);
+			bit_not(non_cg_bitmap);
 
 			/* With bf_continue configured, the original job could
 			 * have been scheduled or cancelled and purged.
@@ -986,6 +998,7 @@ static int _attempt_backfill(void)
 		/* Identify usable nodes for this job */
 		bit_and(avail_bitmap, part_ptr->node_bitmap);
 		bit_and(avail_bitmap, up_node_bitmap);
+		bit_and(avail_bitmap, non_cg_bitmap);
 		for (j=0; ; ) {
 			if ((node_space[j].end_time > start_res) &&
 			     node_space[j].next && (later_start == 0))
@@ -1064,22 +1077,36 @@ static int _attempt_backfill(void)
 			uint32_t save_time_limit = job_ptr->time_limit;
 			int rc = _start_job(job_ptr, resv_bitmap);
 			if (qos_ptr && (qos_ptr->flags & QOS_FLAG_NO_RESERVE)) {
-				if (orig_time_limit == NO_VAL)
+				if (orig_time_limit == NO_VAL) {
+					acct_policy_alter_job(
+						job_ptr, comp_time_limit);
 					job_ptr->time_limit = comp_time_limit;
-				else
+				} else {
+					acct_policy_alter_job(
+						job_ptr, orig_time_limit);
 					job_ptr->time_limit = orig_time_limit;
+				}
 				job_ptr->end_time = job_ptr->start_time +
 						    (job_ptr->time_limit * 60);
 			} else if ((rc == SLURM_SUCCESS) && job_ptr->time_min) {
 				/* Set time limit as high as possible */
+				acct_policy_alter_job(job_ptr, comp_time_limit);
 				job_ptr->time_limit = comp_time_limit;
 				job_ptr->end_time = job_ptr->start_time +
 						    (comp_time_limit * 60);
 				_reset_job_time_limit(job_ptr, now,
 						      node_space);
 				time_limit = job_ptr->time_limit;
+			} else if (orig_time_limit == NO_VAL) {
+				acct_policy_alter_job(job_ptr, comp_time_limit);
+				job_ptr->time_limit = comp_time_limit;
+				job_ptr->end_time = job_ptr->start_time +
+					(job_ptr->time_limit * 60);
 			} else {
+				acct_policy_alter_job(job_ptr, orig_time_limit);
 				job_ptr->time_limit = orig_time_limit;
+				job_ptr->end_time = job_ptr->start_time +
+					(job_ptr->time_limit * 60);
 			}
 			if (rc == ESLURM_ACCOUNTING_POLICY) {
 				/* Unknown future start time, just skip job */
@@ -1093,6 +1120,7 @@ static int _attempt_backfill(void)
 			} else {
 				/* Started this job, move to next one */
 				reject_array_job_id = 0;
+				reject_array_part   = NULL;
 
 				/* Update the database if job time limit
 				 * changed and move to next job */
@@ -1141,6 +1169,7 @@ static int _attempt_backfill(void)
 		if (qos_ptr && (qos_ptr->flags & QOS_FLAG_NO_RESERVE))
 			continue;
 		reject_array_job_id = 0;
+		reject_array_part   = NULL;
 		if (debug_flags & DEBUG_FLAG_BACKFILL)
 			_dump_job_sched(job_ptr, end_reserve, avail_bitmap);
 		xfree(job_ptr->sched_nodes);
@@ -1158,6 +1187,7 @@ static int _attempt_backfill(void)
 	FREE_NULL_BITMAP(avail_bitmap);
 	FREE_NULL_BITMAP(exc_core_bitmap);
 	FREE_NULL_BITMAP(resv_bitmap);
+	FREE_NULL_BITMAP(non_cg_bitmap);
 
 	for (i=0; ; ) {
 		FREE_NULL_BITMAP(node_space[i].avail_bitmap);
@@ -1240,6 +1270,7 @@ static void _reset_job_time_limit(struct job_record *job_ptr, time_t now,
 {
 	int32_t j, resv_delay;
 	uint32_t orig_time_limit = job_ptr->time_limit;
+	uint32_t new_time_limit;
 
 	for (j=0; ; ) {
 		if ((node_space[j].begin_time != now) &&
@@ -1255,7 +1286,9 @@ static void _reset_job_time_limit(struct job_record *job_ptr, time_t now,
 		if ((j = node_space[j].next) == 0)
 			break;
 	}
-	job_ptr->time_limit = MAX(job_ptr->time_min, job_ptr->time_limit);
+	new_time_limit = MAX(job_ptr->time_min, job_ptr->time_limit);
+	acct_policy_alter_job(job_ptr, new_time_limit);
+	job_ptr->time_limit = new_time_limit;
 	job_ptr->end_time = job_ptr->start_time + (job_ptr->time_limit * 60);
 
 	job_time_adj_resv(job_ptr);

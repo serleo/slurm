@@ -264,6 +264,10 @@ bool slurm_get_priority_favor_small(void);
  */
 uint32_t slurm_get_priority_max_age(void);
 
+/* slurm_get_priority_params
+ * RET char * - Value of PriorityParameters, MUST be xfreed by caller */
+char *slurm_get_priority_params(void);
+
 /* slurm_get_priority_reset_period
  * returns the priority usage reset period in seconds from slurmctld_conf object
  * RET uint16_t - flag, see PRIORITY_RESET_* in slurm/slurm.h.
@@ -704,6 +708,9 @@ char *slurm_get_task_plugin(void);
 
 /* slurm_get_task_plugin_param */
 uint16_t slurm_get_task_plugin_param(void);
+
+/* Get SchedulerTimeSlice (secs) */
+uint16_t slurm_get_time_slice(void);
 
 /* slurm_get_core_spec_plugin
  * RET core_spec plugin name, must be xfreed by caller */

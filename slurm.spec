@@ -131,12 +131,10 @@ BuildRequires: mysql-devel >= 5.0.0
 %endif
 
 %if %{slurm_with cray_alps}
-BuildRequires: cray-MySQL-devel-enterprise
-Requires: cray-MySQL-devel-enterprise
+BuildRequires: mysql-devel
 %endif
 
 %if %{slurm_with cray}
-BuildRequires: cray-MySQL-devel-enterprise
 BuildRequires: cray-libalpscomm_cn-devel
 BuildRequires: cray-libalpscomm_sn-devel
 BuildRequires: libnuma-devel
@@ -874,6 +872,7 @@ rm -rf $RPM_BUILD_ROOT
 %{_libdir}/slurm/mpi_pmi2.so
 %endif
 %{_libdir}/slurm/mpi_none.so
+%{_libdir}/slurm/preempt_job_prio.so
 %{_libdir}/slurm/preempt_none.so
 %{_libdir}/slurm/preempt_partition_prio.so
 %{_libdir}/slurm/preempt_qos.so
@@ -1034,7 +1033,7 @@ if [ "$1" = 0 ]; then
 	/sbin/ldconfig %{_libdir}
     fi
 fi
-%if %{?insserv_cleanup}0
+%if %{?insserv_cleanup:1}0
 %insserv_cleanup
 %endif
 

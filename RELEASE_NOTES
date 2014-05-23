@@ -1,5 +1,5 @@
 RELEASE NOTES FOR SLURM VERSION 14.11
-10 April 2014
+20 May 2014
 
 
 IMPORTANT NOTE:
@@ -25,9 +25,11 @@ Slurm will result in loss of state information.
 
 HIGHLIGHTS
 ==========
- -- Add support for allocation of GRES by model type for heterogenous systems
-    (e.g. request a Kepler GPU, a Tesla GPU, or a GPU of any type).
-
+ -- Add support for allocation of generic resources by model type for
+    heterogenous systems (e.g. request a Kepler GPU, a Tesla GPU, or a GPU of
+    any type).
+ -- Added support for non-consumable generic resources that are limited, but
+    can be shared between jobs.
 
 RPMBUILD CHANGES
 ================
@@ -43,7 +45,21 @@ CONFIGURATION FILE CHANGES (see man appropriate man page for details)
  -- To support larger numbers of jobs when the StateSaveDirectory is on a
     file system that supports a limited number of files in a directory, add a
     subdirectory called "hash.#" based upon the last digit of the job ID.
-
+ -- Added GRES type (e.g. model name) and "non_consume" fields for resources
+    that are limited, but can be shared between jobs.
+ -- Added ChosLoc configuration parameter in slurm.conf (Chroot OS tool
+    location).
+ -- Added MemLimitEnforce configuration parameter in slurm.conf (Used to disable
+    enforcement of memory limits)
+ -- Added PriorityParameters configuration parameter in slurm.conf (String used
+    to hold configuration information for the PriorityType plugin).
+ -- Added RequeueExit and RequeueExitHold configuration parameter in slurm.conf
+    (Defines job exit codes which trigger a job being requeued and/or held).
+ -- Add SelectTypeParameters option of CR_PACK_NODES to pack a job's tasks
+    tightly on its allocated nodes rather than distributing them evenly across
+    the allocated nodes.
+ -- Added PriorityFlags option of Calulate_Running to continue recalculating
+    the priority of running jobs.
 
 DBD CONFIGURATION FILE CHANGES (see "man slurmdbd.conf" for details)
 ====================================================================
@@ -57,6 +73,9 @@ COMMAND CHANGES (see man pages for details)
     sview or scontrol.
  -- Modify squeue --start option to print the nodes expected to be used for
     pending job (in addition to expected start time, etc.).
+ -- Add srun --cpu-freq options to set the CPU governor (OnDemand, Performance,
+    PowerSave or UserSpace).
+
 
 OTHER CHANGES
 =============
@@ -75,8 +94,13 @@ Added the following struct definitions
  -- Added the following fields to struct stats_info_response_msg:
     rpc_type_size, rpc_type_id, rpc_type_cnt, rpc_type_time,
     rpc_user_size, rpc_user_id, rpc_user_cnt, rpc_user_time.
- -- Added the following fields to struct jop_info:
+ -- Added the following fields to struct job_info:
     sched_nodes
+ -- Added the following fields to struct node_info:
+    gres_drain and gres_used.
+ -- Added the following fields to struct slurm_ctl_conf:
+    chos_loc, mem_limit_enforce, priority_params
+    requeue_exit, requeue_exit_hold
 
 Changed the following enums and #defines
 ========================================

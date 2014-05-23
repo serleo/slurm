@@ -588,8 +588,8 @@ typedef struct complete_prolog {
 typedef struct step_complete_msg {
 	uint32_t job_id;
 	uint32_t job_step_id;
-	uint32_t range_first;
-	uint32_t range_last;
+	uint32_t range_first;	/* First node rank within job step's alloc */
+	uint32_t range_last;	/* Last node rank within job step's alloc */
  	uint32_t step_rc;	/* largest task return code */
 	jobacctinfo_t *jobacct;
 } step_complete_msg_t;
@@ -993,10 +993,10 @@ typedef struct forward_data_msg {
 
 /* suspend_msg_t variant for internal slurm daemon communications */
 typedef struct suspend_int_msg {
-	uint16_t op;            /* suspend operation, see enum suspend_opts */
+	uint8_t  indf_susp;     /* non-zero if being suspended indefinitely */
 	uint16_t job_core_spec;	/* Count of specialized cores */
 	uint32_t job_id;        /* slurm job_id */
-	uint8_t  indf_susp;     /* non-zero if being suspended indefinitely */
+	uint16_t op;            /* suspend operation, see enum suspend_opts */
 	void *   switch_info;	/* opaque data for switch plugin */
 } suspend_int_msg_t;
 
@@ -1250,9 +1250,6 @@ extern uint16_t preempt_mode_num(const char *preempt_mode);
 extern char *log_num2string(uint16_t inx);
 extern uint16_t log_string2num(char *name);
 
-/* Convert RPC message type number to equivalent string */
-extern char *rpc_num2string(uint16_t inx);
-
 /* Convert HealthCheckNodeState numeric value to a string.
  * Caller must xfree() the return value */
 extern char *health_check_node_state_str(uint16_t node_state);
@@ -1288,7 +1285,10 @@ extern bool valid_spank_job_env(char **spank_job_env,
 extern char *trigger_res_type(uint16_t res_type);
 extern char *trigger_type(uint32_t trig_type);
 
-/* user needs to xfree after */
+/* user needs to xfree return value */
+extern char *priority_flags_string(uint16_t priority_flags);
+
+/* user needs to xfree return value */
 extern char *reservation_flags_string(uint32_t flags);
 
 /* Return ctime like string without the newline.
@@ -1297,6 +1297,12 @@ extern char *slurm_ctime(const time_t *timep);
 
 /* Return ctime like string without the newline, thread safe. */
 extern char *slurm_ctime_r(const time_t *timep, char *time_str);
+
+/* Given a protocol opcode return its string
+ * description mapping the slurm_msg_type_t
+ * to its name.
+ */
+extern char *rpc_num2string(uint16_t opcode);
 
 #define safe_read(fd, buf, size) do {					\
 		int remaining = size;					\

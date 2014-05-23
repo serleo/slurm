@@ -97,7 +97,7 @@
 static void  _make_tmpdir(stepd_step_rec_t *job);
 static int   _run_script_and_set_env(const char *name, const char *path,
 				     stepd_step_rec_t *job);
-static void  _proc_stdout(char *buf, char ***env);
+static void  _proc_stdout(char *buf, stepd_step_rec_t *job);
 static char *_uint32_array_to_str(int array_len, const uint32_t *array);
 
 /*
@@ -106,12 +106,13 @@ static char *_uint32_array_to_str(int array_len, const uint32_t *array);
  * "unset  NAME"	clears an environment variable
  * "print  <whatever>"	writes that to the job's stdout
  */
-static void _proc_stdout(char *buf, char ***env)
+static void _proc_stdout(char *buf, stepd_step_rec_t *job)
 {
 	bool end_buf = false;
 	int len;
 	char *buf_ptr, *name_ptr, *val_ptr;
 	char *end_line, *equal_ptr;
+	char ***env = &job->env;
 
 	buf_ptr = buf;
 	while (buf_ptr[0]) {
@@ -138,6 +139,16 @@ static void _proc_stdout(char *buf, char ***env)
 				equal_ptr--;
 			equal_ptr[0] = '\0';
 			end_line[0] = '\0';
+			if (!strcmp(name_ptr, "SLURM_PROLOG_CPU_MASK")) {
+				job->cpu_bind_type = CPU_BIND_MASK;
+				xfree(job->cpu_bind);
+				job->cpu_bind = xstrdup(val_ptr);
+				if (task_g_pre_launch(job)) {
+					error("Failed SLURM_PROLOG_CPU_MASK "
+					      "setup");
+					exit(1);
+				}
+			}
 			debug("export name:%s:val:%s:", name_ptr, val_ptr);
 			if (setenvf(env, name_ptr, "%s", val_ptr)) {
 				error("Unable to set %s environment variable",
@@ -187,10 +198,11 @@ static int
 _run_script_and_set_env(const char *name, const char *path,
 			stepd_step_rec_t *job)
 {
-	int status, rc, nread;
+	int status, rc;
 	pid_t cpid;
-	int pfd[2], offset = 0;
+	int pfd[2];
 	char buf[4096];
+	FILE *f;
 
 	xassert(job->env);
 	if (path == NULL || path[0] == '\0')
@@ -228,18 +240,24 @@ _run_script_and_set_env(const char *name, const char *path,
 		setpgrp();
 #endif
 		execve(path, argv, job->env);
-		error("execve(): %m");
+		error("execve(%s): %m", path);
 		exit(127);
 	}
 
 	close(pfd[1]);
-	buf[0] = '\0';
-	while ((nread = read(pfd[0], buf+offset, (sizeof(buf)-offset))) > 0)
-		offset += nread;
-	/* debug ("read %d:%s:", offset, buf); */
-	_proc_stdout(buf, &job->env);
+	f = fdopen(pfd[0], "r");
+	if (f == NULL) {
+		error("Cannot open pipe device");
+		log_fini();
+		exit(1);
+	}
+	while (feof(f) == 0) {
+		if (fgets(buf, sizeof(buf) - 1, f) != NULL) {
+			_proc_stdout(buf, job);
+		}
+	}
+	fclose(f);
 
-	close(pfd[0]);
 	while (1) {
 		rc = waitpid(cpid, &status, 0);
 		if (rc < 0) {

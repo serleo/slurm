@@ -163,6 +163,8 @@ void sort_job_list(List job_list)
 			list_sort(job_list, _sort_job_by_priority);
 		else if (params.sort[i] == 'P')
 			list_sort(job_list, _sort_job_by_partition);
+		else if (params.sort[i] == 'Q')
+			list_sort(job_list, _sort_job_by_priority);
 		else if (params.sort[i] == 'S')
 			list_sort(job_list, _sort_job_by_time_start);
 		else if (params.sort[i] == 't')
@@ -231,6 +233,30 @@ void sort_step_list(List step_list)
 /*****************************************************************************
  * Local Job Sort Functions
  *****************************************************************************/
+static inline int _diff_long(long value_1, long value_2)
+{
+	if (value_1 > value_2)
+		return 1;
+	if (value_1 < value_2)
+		return -1;
+	return 0;
+}
+static inline int _diff_time(time_t value_1, time_t value_2)
+{
+	if (value_1 > value_2)
+		return 1;
+	if (value_1 < value_2)
+		return -1;
+	return 0;
+}
+static inline int _diff_uint32(uint32_t value_1, uint32_t value_2)
+{
+	if (value_1 > value_2)
+		return 1;
+	if (value_1 < value_2)
+		return -1;
+	return 0;
+}
 static void _get_job_info_from_void(job_info_t **j1, job_info_t **j2, void *v1, void *v2)
 {
 	*j1 = *(job_info_t **)v1;
@@ -289,7 +315,7 @@ static int _sort_job_by_group_id(void *void1, void *void2)
 
 	_get_job_info_from_void(&job1, &job2, void1, void2);
 
-	diff = job1->group_id - job2->group_id;
+	diff = _diff_uint32(job1->group_id, job2->group_id);
 
 	if (reverse_order)
 		diff = -diff;
@@ -325,7 +351,7 @@ static int _sort_job_by_id(void *void1, void *void2)
 
 	_get_job_info_from_void(&job1, &job2, void1, void2);
 
-	diff = job1->job_id - job2->job_id;
+	diff = _diff_uint32(job1->job_id , job2->job_id);
 
 	if (reverse_order)
 		diff = -diff;
@@ -417,7 +443,7 @@ static int _sort_job_by_num_nodes(void *void1, void *void2)
 
 	_get_job_info_from_void(&job1, &job2, void1, void2);
 
-	diff = job1->num_nodes - job2->num_nodes;
+	diff = _diff_uint32(job1->num_nodes, job2->num_nodes);
 
 	if (reverse_order)
 		diff = -diff;
@@ -432,7 +458,7 @@ static int _sort_job_by_num_cpus(void *void1, void *void2)
 
 	_get_job_info_from_void(&job1, &job2, void1, void2);
 
-	diff = job1->num_cpus - job2->num_cpus;
+	diff = _diff_uint32(job1->num_cpus, job2->num_cpus);
 
 	if (reverse_order)
 		diff = -diff;
@@ -447,9 +473,9 @@ static int _sort_job_by_num_sct(void *void1, void *void2)
 
 	_get_job_info_from_void(&job1, &job2, void1, void2);
 
-	diffs = job1->sockets_per_node - job2->sockets_per_node;
-	diffc = job1->cores_per_socket - job2->cores_per_socket;
-	difft = job1->threads_per_core - job2->threads_per_core;
+	diffs = _diff_uint32(job1->sockets_per_node, job2->sockets_per_node);
+	diffc = _diff_uint32(job1->cores_per_socket, job2->cores_per_socket);
+	difft = _diff_uint32(job1->threads_per_core, job2->threads_per_core);
 
 	if (reverse_order) {
 		diffs = -diffs;
@@ -472,7 +498,7 @@ static int _sort_job_by_sockets(void *void1, void *void2)
 
 	_get_job_info_from_void(&job1, &job2, void1, void2);
 
-	diff = job1->sockets_per_node - job2->sockets_per_node;
+	diff = _diff_uint32(job1->sockets_per_node, job2->sockets_per_node);
 
 	if (reverse_order)
 		diff = -diff;
@@ -487,7 +513,7 @@ static int _sort_job_by_cores(void *void1, void *void2)
 
 	_get_job_info_from_void(&job1, &job2, void1, void2);
 
-	diff = job1->cores_per_socket - job2->cores_per_socket;
+	diff = _diff_uint32(job1->cores_per_socket, job2->cores_per_socket);
 
 	if (reverse_order)
 		diff = -diff;
@@ -502,7 +528,7 @@ static int _sort_job_by_threads(void *void1, void *void2)
 
 	_get_job_info_from_void(&job1, &job2, void1, void2);
 
-	diff = job1->threads_per_core - job2->threads_per_core;
+	diff = _diff_uint32(job1->threads_per_core, job2->threads_per_core);
 
 	if (reverse_order)
 		diff = -diff;
@@ -519,7 +545,7 @@ static int _sort_job_by_min_memory(void *void1, void *void2)
 
 	job1->pn_min_memory &= (~MEM_PER_CPU);
 	job2->pn_min_memory &= (~MEM_PER_CPU);
-	diff = job1->pn_min_memory - job2->pn_min_memory;
+	diff = _diff_uint32(job1->pn_min_memory, job2->pn_min_memory);
 
 	if (reverse_order)
 		diff = -diff;
@@ -534,7 +560,7 @@ static int _sort_job_by_min_tmp_disk(void *void1, void *void2)
 
 	_get_job_info_from_void(&job1, &job2, void1, void2);
 
-	diff = job1->pn_min_tmp_disk - job2->pn_min_tmp_disk;
+	diff = _diff_uint32(job1->pn_min_tmp_disk, job2->pn_min_tmp_disk);
 
 	if (reverse_order)
 		diff = -diff;
@@ -581,7 +607,7 @@ static int _sort_job_by_time_end(void *void1, void *void2)
 
 	_get_job_info_from_void(&job1, &job2, void1, void2);
 
-	diff = job1->end_time - job2->end_time;
+	diff = _diff_time(job1->end_time, job2->end_time);
 
 	if (reverse_order)
 		diff = -diff;
@@ -605,12 +631,7 @@ static int _sort_job_by_time_left(void *void1, void *void2)
 		time2 = INFINITE;
 	else
 		time2 = job2->time_limit - job_time_used(job2);
-	if (time1 > time2)
-		diff = 1;
-	else if (time1 == time2)
-		diff = 0;
-	else
-		diff = -1;
+	diff = _diff_time(time1, time2);
 
 	if (reverse_order)
 		diff = -diff;
@@ -625,25 +646,20 @@ static int _sort_job_by_time_limit(void *void1, void *void2)
 
 	_get_job_info_from_void(&job1, &job2, void1, void2);
 
-	if (job1->time_limit > job2->time_limit)
-		diff = 1;
-	else if (job1->time_limit == job2->time_limit)
-		diff = 0;
-	else
-		diff = -1;
+	diff = _diff_uint32(job1->time_limit, job2->time_limit);
 
 	if (reverse_order)
 		diff = -diff;
 	return diff;
 }
 
-static uint32_t _get_start_time(job_info_t *job)
+static time_t _get_start_time(job_info_t *job)
 {
 	if (job->start_time == (time_t) 0)
-		return 0xffffffff;
+		return (now + 100);
 	if ((job->job_state == JOB_PENDING) && (job->start_time < now))
-		return (uint32_t) now;
-	return (uint32_t) job->start_time;
+		return now;
+	return job->start_time;
 }
 
 static int _sort_job_by_time_start(void *void1, void *void2)
@@ -651,19 +667,14 @@ static int _sort_job_by_time_start(void *void1, void *void2)
 	int diff;
 	job_info_t *job1;
 	job_info_t *job2;
-	uint32_t start_time1, start_time2;
+	time_t start_time1, start_time2;
 
 	_get_job_info_from_void(&job1, &job2, void1, void2);
 
 	start_time1 = _get_start_time(job1);
 	start_time2 = _get_start_time(job2);
 
-	if (start_time1 > start_time2)
-		diff = 1;
-	else if (start_time1 < start_time2)
-		diff = -1;
-	else
-		diff = 0;
+	diff = _diff_time(start_time1, start_time2);
 
 	if (reverse_order)
 		diff = -diff;
@@ -681,7 +692,7 @@ static int _sort_job_by_time_used(void *void1, void *void2)
 
 	time1 = job_time_used(job1);
 	time2 = job_time_used(job2);
-	diff = time1 - time2;
+	diff = _diff_long(time1, time2);
 
 	if (reverse_order)
 		diff = -diff;
@@ -716,7 +727,7 @@ static int _sort_job_by_priority(void *void1, void *void2)
 
 	_get_job_info_from_void(&job1, &job2, void1, void2);
 
-	diff = job1->priority - job2->priority;
+	diff = _diff_uint32(job1->priority, job2->priority);
 
 	if (reverse_order)
 		diff = -diff;
@@ -731,7 +742,7 @@ static int _sort_job_by_user_id(void *void1, void *void2)
 
 	_get_job_info_from_void(&job1, &job2, void1, void2);
 
-	diff = job1->user_id - job2->user_id;
+	diff = _diff_uint32(job1->user_id, job2->user_id);
 
 	if (reverse_order)
 		diff = -diff;
@@ -809,9 +820,9 @@ static int _sort_step_by_id(void *void1, void *void2)
 
 	_get_step_info_from_void(&step1, &step2, void1, void2);
 
-	diff = step1->job_id - step2->job_id;
+	diff = _diff_uint32(step1->job_id, step2->job_id);
 	if (diff == 0)
-		diff = step1->step_id - step2->step_id;
+		diff = _diff_uint32(step1->step_id, step2->step_id);
 
 	if (reverse_order)
 		diff = -diff;
@@ -904,7 +915,7 @@ static int _sort_step_by_time_limit(void *void1, void *void2)
 
 	_get_step_info_from_void(&step1, &step2, void1, void2);
 
-	diff = step1->time_limit - step2->time_limit;
+	diff = _diff_uint32(step1->time_limit, step2->time_limit);
 
 	if (reverse_order)
 		diff = -diff;
@@ -919,7 +930,7 @@ static int _sort_step_by_time_start(void *void1, void *void2)
 
 	_get_step_info_from_void(&step1, &step2, void1, void2);
 
-	diff = step1->start_time - step2->start_time;
+	diff = _diff_time(step1->start_time, step2->start_time);
 
 	if (reverse_order)
 		diff = -diff;
@@ -937,7 +948,7 @@ static int _sort_step_by_time_used(void *void1, void *void2)
 
 	used1 = difftime(now, step1->start_time);
 	used2 = difftime(now, step2->start_time);
-	diff = used1 - used2;
+	diff = _diff_time(used1, used2);
 
 	if (reverse_order)
 		diff = -diff;
@@ -952,7 +963,7 @@ static int _sort_step_by_user_id(void *void1, void *void2)
 
 	_get_step_info_from_void(&step1, &step2, void1, void2);
 
-	diff = step1->user_id - step2->user_id;
+	diff = _diff_uint32(step1->user_id, step2->user_id);
 
 	if (reverse_order)
 		diff = -diff;

@@ -155,18 +155,21 @@ static bool _merge_job_array(List l, job_info_t * job_ptr)
 		return merge;
 	if (job_ptr->array_task_id == NO_VAL)
 		return merge;
-	if (!IS_JOB_PENDING(job_ptr))
+	if (job_ptr->job_state != JOB_PENDING)	/* Don't merge SPECIAL_EXIT */
 		return merge;
+
 	xfree(job_ptr->node_inx);
 	if (!l)
 		return merge;
 
 	iter = list_iterator_create(l);
 	while ((list_job_ptr = list_next(iter))) {
-		if ((list_job_ptr->array_task_id ==  NO_VAL) ||
-		    (job_ptr->array_job_id != list_job_ptr->array_job_id) ||
-		    (!IS_JOB_PENDING(list_job_ptr)))
+
+		if ((list_job_ptr->array_task_id ==  NO_VAL)
+		    || (job_ptr->array_job_id != list_job_ptr->array_job_id)
+		    || (list_job_ptr->job_state != JOB_PENDING))
 			continue;
+
 		/* We re-purpose the job's node_inx array to store the
 		 * array_task_id values */
 		if (!list_job_ptr->node_inx) {
@@ -335,14 +338,15 @@ job_format_add_function(List list, int width, bool right, char *suffix,
 int _print_job_array_job_id(job_info_t * job, int width, bool right,
 			    char* suffix)
 {
+	char id[FORMAT_STRING_SIZE];
 	if (job == NULL) {	/* Print the Header instead */
 		_print_str("ARRAY_JOB_ID", width, right, true);
 	} else if (job->array_task_id != NO_VAL) {
-		char id[FORMAT_STRING_SIZE];
 		snprintf(id, FORMAT_STRING_SIZE, "%u", job->array_job_id);
 		_print_str(id, width, right, true);
 	} else {
-		_print_str("N/A", width, right, true);
+		snprintf(id, FORMAT_STRING_SIZE, "%u", job->job_id);
+		_print_str(id, width, right, true);
 	}
 	if (suffix)
 		printf("%s", suffix);
@@ -395,9 +399,10 @@ int _print_job_job_id(job_info_t * job, int width, bool right, char* suffix)
 {
 	if (job == NULL) {	/* Print the Header instead */
 		_print_str("JOBID", width, right, true);
-	} else if ((job->array_task_id != NO_VAL) &&
-		   !params.array_flag && IS_JOB_PENDING(job)  &&
-		   job->node_inx) {
+	} else if ((job->array_task_id != NO_VAL)
+		   && !params.array_flag
+		   && (job->job_state == JOB_PENDING)
+		   && job->node_inx) {
 		uint32_t i, local_width = width, max_task_id = 0;
 		char *id, *task_str;
 		bitstr_t *task_bits;
@@ -1594,7 +1599,7 @@ static int _filter_job(job_info_t * job)
 	ListIterator iterator;
 	uint32_t *user;
 	uint16_t *state_id;
-	char *account, *part, *qos, *name;
+	char *account, *license, *part, *qos, *name;
 	squeue_job_step_t *job_step_id;
 
 	if (params.job_list) {
@@ -1627,6 +1632,30 @@ static int _filter_job(job_info_t * job)
 			iterator = list_iterator_create(params.part_list);
 			while ((part = list_next(iterator))) {
 				if (strcmp(part, token) == 0) {
+					filter = 0;
+					break;
+				}
+			}
+			list_iterator_destroy(iterator);
+			token = strtok_r(NULL, ",", &last);
+		}
+		xfree(tmp_name);
+		if (filter == 1)
+			return 2;
+	}
+
+	if (params.licenses_list) {
+		char *token = NULL, *last = NULL, *tmp_name = NULL;
+
+		filter = 1;
+		if (job->licenses) {
+			tmp_name = xstrdup(job->licenses);
+			token = strtok_r(tmp_name, ",", &last);
+		}
+		while (token && filter) {
+			iterator = list_iterator_create(params.licenses_list);
+			while ((license = list_next(iterator))) {
+				if (strcmp(license, token) == 0) {
 					filter = 0;
 					break;
 				}

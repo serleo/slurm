@@ -44,15 +44,18 @@
   There are 2 different types of counters, system and blade.
 <p>
   For the system option (--network=system) only one job can use system at
-  a time.  This option will allocate every node in the cluster.  If
-  steps inside the allocation wish to run on less than the full system
-  they must specify the node count for each step.
+  a time.   Only nodes requested will be marked in use for the job
+  allocation.  If the job does not fill up the entire system the rest
+  of the nodes are not able to be used by other jobs using NPC, if
+  idle their state will appear as PerfCnts.  These nodes are still
+  available for other jobs not using NPC.
 </p>
 <p>
   For the blade option (--network=blade) Only nodes requested
   will be marked in use for the job allocation.  If the job does not
   fill up the entire blade(s) allocated to the job those blade(s) are not
-  able to be used by other jobs, but will appear in the state PerfCnts.
+  able to be used by other jobs using NPC, if idle their state will appear as
+  PerfCnts.  These nodes are still available for other jobs not using NPC.
 </p>
 <li>Core Specialization</li>
 <p>
@@ -91,6 +94,9 @@
   by using the <b><i>SelectTypeParameters=other_cons_res</i></b>,
   doing this will allow you to run multiple jobs on a Cray node just
   like on a normal Linux cluster.
+  Use addition <b><i>SelectTypeParameters</i></b> to identify the resources
+  to allocated (e.g. cores, sockets, memory, etc.). See the slurm.conf man
+  page for details.
 </p>
 <li>Switch</li>
 <p>
@@ -137,6 +143,6 @@
 
 <p class="footer"><a href="#top">top</a></p>
 
-<p style="text-align:center;">Last modified 25 March 2014</p>
+<p style="text-align:center;">Last modified 5 April 2014</p>
 
 <!--#include virtual="footer.txt"-->

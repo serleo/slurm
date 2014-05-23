@@ -46,10 +46,10 @@ if {[test_serial]} {
 }
 
 #
-# Test if task affinity support is supported.
+# Test if CPU affinity support is supported.
 #
-if {![test_affinity]} {
-	send_user "\nWARNING: task affinity not supported on this system\n"
+if {![test_cpu_affinity]} {
+	send_user "\nWARNING: CPU affinity not supported on this system\n"
 	exit 0
 }
 send_user "\ntask affinity plugin installed\n"
@@ -149,6 +149,31 @@ expect {
 	}
 }
 
+if {$task_cnt > 32} {
+	send "exit\r"
+	expect {
+		-re "error" {
+			send_user "\nFAILURE: some error occurred\n"
+			set exit_code 1
+		}
+		timeout {
+			send_user "\nFAILURE: salloc not responding "
+			send_user "or failure to recognize prompt\n"
+			slow_kill $salloc_pid
+			set exit_code 1
+		}
+		eof {
+			wait
+		}
+	}
+
+	if {$exit_code == 0} {
+		exec $bin_rm -f $file_prog
+		send_user "\nWARNING: Expect unable to work with more than 32-bit numbers\n"
+	}
+	exit $exit_code
+}
+
 #
 # Run a job step with affinity
 #
@@ -240,7 +265,9 @@ expect {
 	}
 	-re $prompt
 }
-if {$verbose_cnt != $task_cnt} {
+# Both task/affinity and task/cpu will generate verbose message,
+# so check for double messages in case both plugins are configured.
+if {$verbose_cnt != $task_cnt && $verbose_cnt != [expr $task_cnt * 2]} {
 	send_user "\nFAILURE: verbose messages count inconsisent ($verbose_cnt != $task_cnt)\n"
 	set exit_code 1
 }
@@ -285,7 +312,7 @@ set cpu_cnt 0
 while {$cpu_cnt < $task_cnt} {
 	set mask_sum 0
 	set mask [ expr 1 << $cpu_cnt ]
-	set mstr [ dec2hex $mask]
+	set mstr [ uint2hex $mask ]
 	send "$srun -c1 --cpu_bind=mask_cpu:$mstr ./$file_prog\r"
 	expect {
 		-re "TASK_ID:($number),MASK:($number)" {
@@ -326,7 +353,7 @@ set full_mask [ expr (1 << $task_cnt) - 1 ]
 while {$cpu_cnt < $task_cnt} {
 	set mask_sum 0
 	set mask [ expr 1 << $cpu_cnt ]
-	set mstr [ dec2hex  $mask]
+	set mstr [ uint2hex  $mask ]
 	set fwd_mask "$fwd_mask,$mstr"
 	set fwd_map  "$fwd_map,$cpu_cnt"
 	set rev_mask "$mstr,$rev_mask"
@@ -555,4 +582,3 @@ if {$exit_code == 0} {
 	send_user "  or if Shared=FORCE for the default partition.\n"
 }
 exit $exit_code
-

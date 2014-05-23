@@ -125,6 +125,7 @@ Lead Slurm developers are:
 <li>Steven McDougall (SiCortex)</li>
 <li>Donna Mecozzi (Lawrence Livermore National Laboratory)</li>
 <li>Bj&oslash;rn-Helge Mevik (University of Oslo, Norway)</li>
+<li>Stuart Midgley (Down Under GeoSolutions)</li>
 <li>Chris Morrone (Lawrence Livermore National Laboratory)</li>
 <li>Pere Munt (Barcelona Supercomputing Center, Spain)</li>
 <br>
@@ -137,6 +138,7 @@ Lead Slurm developers are:
 <li>Alan Orth (International Livestock Research Institute, Kenya)</li>
 <br>
 <li>Juan Pancorbo (Leibniz-Rechenzentrum, Germany)</li>
+<li>David Parks (Cray)</li>
 <li>Chrysovalantis Paschoulas (Juelich Supercomputing Centre, Germany)</li>
 <li>R&eacute;mi Palancher</li>
 <li>Alejandro Lucero Palau (Barcelona Supercomputing Center, Spain)</li>
@@ -183,7 +185,7 @@ Lead Slurm developers are:
 <li>Daniel M. Weeks (Rensselaer Polytechnic Institute)</li>
 <li>Nathan Weeks (Iowa State University)</li>
 <li>Andy Wettstein (University of Chicago)</li>
-<li>Tim Wickberg (Rensselaer Polytechnic Institute)</li>
+<li>Tim Wickberg (George Washington University)</li>
 <li>Ramiro Brito Willmersdorf (Universidade Federal de Pemambuco, Brazil)</li>
 <li>Jay Windley (Linux NetworX)</li>
 <li>Eric Winter</li>
@@ -194,6 +196,6 @@ Lead Slurm developers are:
 <!-- INDIVIDUALS, PLEASE KEEP IN ALPHABETICAL ORDER -->
 </ul>
 
-<p style="text-align:center;">Last modified 11 April 2014</p>
+<p style="text-align:center;">Last modified 25 April 2014</p>
 
 <!--#include virtual="footer.txt"-->

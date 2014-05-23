@@ -429,8 +429,9 @@ static bg_record_t *_find_matching_block(List block_list,
 								tmp_list, 0, 0);
 						list_destroy(tmp_list);
 					}
-				} else if (found_record->err_ratio
-					   >= bg_conf->max_block_err) {
+				} else if (found_record->err_ratio &&
+					   (found_record->err_ratio
+					    >= bg_conf->max_block_err)) {
 					slurm_mutex_unlock(&block_state_mutex);
 					/* This means the block is higher than
 					   the given max_block_err defined in
@@ -2067,8 +2068,9 @@ extern int submit_job(struct job_record *job_ptr, bitstr_t *slurm_block_bitmap,
 						job_ptr->state_reason =
 							WAIT_BLOCK_D_ACTION;
 						xfree(job_ptr->state_desc);
-					} else if (found_record->err_ratio
-						   >= bg_conf->max_block_err) {
+					} else if (found_record->err_ratio &&
+						   (found_record->err_ratio >=
+						    bg_conf->max_block_err)) {
 						job_ptr->state_reason =
 							WAIT_BLOCK_MAX_ERR;
 						xfree(job_ptr->state_desc);
@@ -2105,53 +2107,9 @@ extern int submit_job(struct job_record *job_ptr, bitstr_t *slurm_block_bitmap,
 						   SELECT_JOBDATA_BLOCK_PTR,
 						   bg_record);
 
-				if ((jobinfo->conn_type[0] != SELECT_NAV)
-				    && (jobinfo->conn_type[0]
-					< SELECT_SMALL)) {
-					for (dim=0; dim<SYSTEM_DIMENSIONS;
-					     dim++)
-						jobinfo->conn_type[dim] =
-							bg_record->conn_type[
-								dim];
-				}
-
-				/* If it isn't 0 then it was setup
-				   previous (sub-block)
-				*/
-				if (jobinfo->geometry[dim] == 0)
-					memcpy(jobinfo->geometry,
-					       bg_record->geo,
-					       sizeof(bg_record->geo));
-
 				_build_job_resources_struct(job_ptr,
 							    slurm_block_bitmap,
 							    bg_record);
-				if (job_ptr) {
-					if (bg_record->job_list) {
-						/* Mark the ba_mp
-						 * cnodes as used now.
-						 */
-						ba_mp_t *ba_mp = list_peek(
-							bg_record->ba_mp_list);
-						xassert(ba_mp);
-						xassert(ba_mp->cnode_bitmap);
-						bit_or(ba_mp->cnode_bitmap,
-						       jobinfo->units_avail);
-						if (!find_job_in_bg_record(
-							    bg_record,
-							    job_ptr->job_id))
-							list_append(bg_record->
-								    job_list,
-								    job_ptr);
-					} else {
-						bg_record->job_running =
-							job_ptr->job_id;
-						bg_record->job_ptr = job_ptr;
-					}
-
-					job_ptr->job_state |= JOB_CONFIGURING;
-					last_bg_update = time(NULL);
-				}
 			} else {
 				set_select_jobinfo(
 					job_ptr->select_jobinfo->data,
